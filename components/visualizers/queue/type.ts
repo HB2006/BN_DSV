@@ -1,4 +1,4 @@
-export interface QueueNode {
+export interface ListNode {
   id: number;
   value: number;
 }
