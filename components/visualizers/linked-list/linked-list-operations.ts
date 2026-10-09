@@ -23,12 +23,19 @@ export function insertAtPosition(
   position: number,
   id: number
 ): ListNode[] {
-  if (!Number.isInteger(position) || position < 0 || position > list.length) {
-    throw new Error(`Position must be between 0 and ${list.length}.`);
+  if (
+    !Number.isInteger(position) ||
+    position < 0 ||
+    position > list.length
+  ) {
+    throw new Error(
+      `Position must be between 0 and ${list.length}.`
+    );
   }
 
   const result = [...list];
   result.splice(position, 0, { id, value });
+
   return result;
 }
 
