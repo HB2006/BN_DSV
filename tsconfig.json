@@ -28,6 +28,6 @@
     "**/*.tsx",
     "**/*.mdx",
     ".next/types/**/*.ts"
-  ],
+, "components/visualizers/heap-priorityQ"  ],
   "exclude": ["node_modules"]
 }
