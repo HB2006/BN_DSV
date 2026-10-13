@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -443,7 +444,7 @@ export function LinkedListVisualizer() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
+    <main className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -462,8 +463,8 @@ export function LinkedListVisualizer() {
         </Badge>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:overflow-hidden">
-        <aside className="min-h-0 min-w-0 space-y-3 lg:overflow-y-auto lg:pr-1">
+      <div className="grid grid-cols-1 items-start gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="border-b border-border px-3 py-2">
               <CardTitle className="text-sm">Operations</CardTitle>
@@ -501,22 +502,46 @@ export function LinkedListVisualizer() {
               </div>
 
               <div className="space-y-1 pt-1">
-                <Button onClick={insertAtHead} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={insertAtHead}
+                  className={secondaryButton}
+                  variant="outline"
+                >
                   Insert at Head
                 </Button>
-                <Button onClick={insertAtTail} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={insertAtTail}
+                  className={secondaryButton}
+                  variant="outline"
+                >
                   Insert at Tail
                 </Button>
-                <Button onClick={insertAtIndex} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={insertAtIndex}
+                  className={secondaryButton}
+                  variant="outline"
+                >
                   Insert at Index
                 </Button>
-                <Button onClick={removeValue} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={removeValue}
+                  className={secondaryButton}
+                  variant="outline"
+                >
                   Delete by Value
                 </Button>
-                <Button onClick={search} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={search}
+                  className={secondaryButton}
+                  variant="outline"
+                >
                   Search
                 </Button>
-                <Button onClick={traverse} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={traverse}
+                  className={secondaryButton}
+                  variant="outline"
+                >
                   Traverse
                 </Button>
                 <Button
@@ -537,7 +562,10 @@ export function LinkedListVisualizer() {
 
             <CardContent className="space-y-2 px-3 pb-3">
               <div className="space-y-1">
-                <label htmlFor="ll-count" className="text-[11px] font-medium text-muted-foreground">
+                <label
+                  htmlFor="ll-count"
+                  className="text-[11px] font-medium text-muted-foreground"
+                >
                   Number of nodes (1–30)
                 </label>
                 <Input
@@ -553,7 +581,10 @@ export function LinkedListVisualizer() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="min-w-0 space-y-1">
-                  <label htmlFor="ll-min" className="text-[11px] font-medium text-muted-foreground">
+                  <label
+                    htmlFor="ll-min"
+                    className="text-[11px] font-medium text-muted-foreground"
+                  >
                     Minimum
                   </label>
                   <Input
@@ -566,7 +597,10 @@ export function LinkedListVisualizer() {
                 </div>
 
                 <div className="min-w-0 space-y-1">
-                  <label htmlFor="ll-max" className="text-[11px] font-medium text-muted-foreground">
+                  <label
+                    htmlFor="ll-max"
+                    className="text-[11px] font-medium text-muted-foreground"
+                  >
                     Maximum
                   </label>
                   <Input
@@ -632,9 +666,9 @@ export function LinkedListVisualizer() {
           </Alert>
         </aside>
 
-        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(380px,1fr)_minmax(380px,1fr)] gap-3 lg:grid-rows-2">
-          <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-2.5">
+        <section className="flex min-w-0 flex-col gap-3">
+          <Card className="min-w-0 overflow-hidden border-border bg-card shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-3 py-3 sm:px-4">
               <div className="min-w-0">
                 <CardTitle className="text-base">
                   Visualization Playground
@@ -678,7 +712,8 @@ export function LinkedListVisualizer() {
               </div>
             </CardHeader>
 
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* Stats remain outside the zoomed visualization. */}
               <div className="grid shrink-0 grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
                 <div className="min-w-0 px-1">
                   <p className="text-[11px] text-muted-foreground">Head</p>
@@ -686,10 +721,12 @@ export function LinkedListVisualizer() {
                     {list.length ? list[0].value : "NULL"}
                   </p>
                 </div>
+
                 <div className="min-w-0 px-1">
                   <p className="text-[11px] text-muted-foreground">Nodes</p>
                   <p className="text-base font-bold">{list.length}</p>
                 </div>
+
                 <div className="min-w-0 px-1">
                   <p className="text-[11px] text-muted-foreground">Tail</p>
                   <p className="break-words text-base font-bold">
@@ -698,13 +735,18 @@ export function LinkedListVisualizer() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-muted/20 p-3">
+              {/* Only this viewport contains the zoomed linked-list drawing. */}
+              <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-3 sm:h-[420px] sm:p-4">
                 {list.length === 0 ? (
-                  <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
+                  <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center">
                     <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600 dark:bg-red-950/50">
                       ∅
                     </div>
-                    <p className="text-lg font-semibold">Your list is empty</p>
+
+                    <p className="text-lg font-semibold">
+                      Your list is empty
+                    </p>
+
                     <p className="mt-2 text-sm text-muted-foreground">
                       Insert a node or generate a random list to begin.
                     </p>
@@ -712,7 +754,7 @@ export function LinkedListVisualizer() {
                 ) : (
                   <div className="flex min-h-full min-w-full items-center justify-center">
                     <div
-                      className="flex min-w-max items-center py-8"
+                      className="flex w-max items-center py-8"
                       style={{ zoom }}
                     >
                       <div className="mr-3 flex flex-col items-center gap-2">
@@ -722,6 +764,7 @@ export function LinkedListVisualizer() {
                         >
                           HEAD
                         </Badge>
+
                         <span className="text-2xl text-red-600">↓</span>
                       </div>
 
@@ -759,6 +802,7 @@ export function LinkedListVisualizer() {
 
                               <div className="mt-2 flex w-full items-center justify-between border-t border-border px-2 pt-1 text-[10px] text-muted-foreground">
                                 <span>next</span>
+
                                 <span
                                   className={`h-2.5 w-2.5 rounded-full ${
                                     highlighted
@@ -787,6 +831,7 @@ export function LinkedListVisualizer() {
                                 <span className="text-xl text-muted-foreground">
                                   →
                                 </span>
+
                                 <Badge
                                   variant="outline"
                                   className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300"
@@ -803,9 +848,11 @@ export function LinkedListVisualizer() {
                 )}
               </div>
 
+              {/* Traversal output is intentionally outside the zoom wrapper. */}
               <div className="shrink-0 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold">Traversal Output</p>
+
                   <Badge variant="outline" className="text-[11px]">
                     {traversal?.length ?? 0} values
                   </Badge>
@@ -824,11 +871,13 @@ export function LinkedListVisualizer() {
             </CardContent>
           </Card>
 
-          <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-            <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
+          {/* Pseudocode and complexity stay in normal page flow. */}
+          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
+            <Card className="min-w-0 border-border bg-card shadow-sm">
               <CardHeader className="border-b border-border px-4 py-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">Pseudocode</CardTitle>
+
                   <Badge
                     variant="outline"
                     className="max-w-[65%] truncate border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
@@ -838,7 +887,7 @@ export function LinkedListVisualizer() {
                 </div>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+              <CardContent className="space-y-3 p-3">
                 <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-slate-100 shadow-inner">
                   <div className="min-w-max space-y-0.5 font-mono">
                     {selectedCode.lines.map((line, index) => (
@@ -853,6 +902,7 @@ export function LinkedListVisualizer() {
                         <span className="w-5 shrink-0 select-none text-right text-slate-500">
                           {activeLine === index ? "▶" : index + 1}
                         </span>
+
                         <span
                           className={
                             line.trim().startsWith("//")
@@ -877,6 +927,7 @@ export function LinkedListVisualizer() {
                   <h3 className="mb-2 text-sm font-semibold text-red-700 dark:text-red-300">
                     How it works
                   </h3>
+
                   <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed">
                     {selectedCode.explanation.map((step, index) => (
                       <li key={`${operation}-step-${index}`}>{step}</li>
@@ -886,24 +937,27 @@ export function LinkedListVisualizer() {
               </CardContent>
             </Card>
 
-            <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
+            <Card className="min-w-0 border-border bg-card shadow-sm">
               <CardHeader className="border-b border-border px-4 py-2.5">
                 <CardTitle className="text-base">Time Complexity</CardTitle>
+
                 <CardDescription className="text-xs">
                   Selected operation and common linked-list operations.
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+              <CardContent className="space-y-3 p-3">
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">
                       {selectedCode.title}
                     </p>
+
                     <p className="text-2xl font-bold text-red-700 dark:text-red-400">
                       {selectedCode.complexity}
                     </p>
                   </div>
+
                   <p className="max-w-[55%] text-right text-xs text-muted-foreground">
                     {selectedCode.complexity === "O(1)"
                       ? "Constant time: no traversal needed."
@@ -922,6 +976,7 @@ export function LinkedListVisualizer() {
                         <th className="border-b border-border p-2">Why?</th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {complexityRows.map((row) => (
                         <tr
@@ -931,6 +986,7 @@ export function LinkedListVisualizer() {
                           <td className="border-b border-border p-2 font-medium">
                             {row.operation}
                           </td>
+
                           <td className="border-b border-border p-2">
                             <Badge
                               variant="outline"
@@ -943,6 +999,7 @@ export function LinkedListVisualizer() {
                               {row.time}
                             </Badge>
                           </td>
+
                           <td className="border-b border-border p-2 text-muted-foreground">
                             {row.why}
                           </td>
@@ -960,7 +1017,7 @@ export function LinkedListVisualizer() {
               </CardContent>
             </Card>
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );

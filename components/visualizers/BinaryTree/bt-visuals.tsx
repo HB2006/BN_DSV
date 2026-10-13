@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -217,7 +218,7 @@ const primaryButton =
   "bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500";
 
 const secondaryButton =
-  "h-7 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
+  "h-8 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
@@ -252,9 +253,8 @@ function findNode(
   while (current) {
     if (value === current.value) return current;
 
-    current = value < current.value
-      ? current.left
-      : current.right;
+    current =
+      value < current.value ? current.left : current.right;
   }
 
   return null;
@@ -386,7 +386,7 @@ function layoutTree(root: TreeNode | null): PositionedNode[] {
     if (!node) return;
 
     const x = (left + right) / 2;
-    const y = 44 + depth * 90;
+    const y = 60 + depth * 110;
 
     items.push({
       node,
@@ -434,6 +434,10 @@ export function BinaryTreeVisualizer() {
   const selectedCode = pseudocode[operation];
   const stats = useMemo(() => getStats(root), [root]);
   const positioned = useMemo(() => layoutTree(root), [root]);
+
+  // The canvas uses fixed logical dimensions. Zoom scales only the tree drawing.
+  const treeCanvasWidth = 1000;
+  const treeCanvasHeight = Math.max(300, stats.height * 110 + 60);
 
   function record(text: string) {
     setHistory((old) => [text, ...old].slice(0, 8));
@@ -603,14 +607,14 @@ export function BinaryTreeVisualizer() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+    <main className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
             Binary Tree Visualizer
           </h1>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground sm:text-sm">
             Explore BST operations, traversals, pseudocode, and complexity.
           </p>
         </div>
@@ -623,8 +627,8 @@ export function BinaryTreeVisualizer() {
         </Badge>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
-        <aside className="min-h-0 min-w-0 space-y-3 lg:overflow-y-auto lg:pr-1">
+      <div className="grid grid-cols-1 items-start gap-3 px-4 pb-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="border-b border-border px-3 py-2">
               <CardTitle className="text-sm">Operations</CardTitle>
@@ -632,10 +636,7 @@ export function BinaryTreeVisualizer() {
 
             <CardContent className="space-y-2 px-3 py-3">
               <div className="space-y-1">
-                <label
-                  htmlFor="tree-value"
-                  className="text-xs font-medium"
-                >
+                <label htmlFor="tree-value" className="text-xs font-medium">
                   Node value
                 </label>
 
@@ -645,70 +646,42 @@ export function BinaryTreeVisualizer() {
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder="Value"
-                  className="h-7 bg-background px-2 text-xs"
+                  className="h-8 bg-background px-2 text-xs"
                 />
               </div>
 
               <div className="space-y-1 pt-1">
-                <Button
-                  onClick={insert}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={insert} className={secondaryButton} variant="outline">
                   Insert
                 </Button>
 
-                <Button
-                  onClick={remove}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={remove} className={secondaryButton} variant="outline">
                   Delete
                 </Button>
 
-                <Button
-                  onClick={search}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={search} className={secondaryButton} variant="outline">
                   Search
                 </Button>
 
-                <Button
-                  onClick={() => traverse("inorder")}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={() => traverse("inorder")} className={secondaryButton} variant="outline">
                   Inorder Traversal
                 </Button>
 
-                <Button
-                  onClick={() => traverse("preorder")}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={() => traverse("preorder")} className={secondaryButton} variant="outline">
                   Preorder Traversal
                 </Button>
 
-                <Button
-                  onClick={() => traverse("postorder")}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={() => traverse("postorder")} className={secondaryButton} variant="outline">
                   Postorder Traversal
                 </Button>
 
-                <Button
-                  onClick={() => traverse("levelorder")}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={() => traverse("levelorder")} className={secondaryButton} variant="outline">
                   Level-Order Traversal
                 </Button>
 
                 <Button
                   onClick={clearTree}
-                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                  className="h-8 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                   variant="outline"
                 >
                   Clear Tree
@@ -724,10 +697,7 @@ export function BinaryTreeVisualizer() {
 
             <CardContent className="space-y-2 px-3 pb-3">
               <div className="space-y-1">
-                <label
-                  htmlFor="tree-count"
-                  className="text-[11px] font-medium text-muted-foreground"
-                >
+                <label htmlFor="tree-count" className="text-[11px] font-medium text-muted-foreground">
                   Number of nodes (1–20)
                 </label>
 
@@ -738,16 +708,13 @@ export function BinaryTreeVisualizer() {
                   max="20"
                   value={randomCount}
                   onChange={(e) => setRandomCount(e.target.value)}
-                  className="h-7 px-2 text-xs"
+                  className="h-8 px-2 text-xs"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="min-w-0 space-y-1">
-                  <label
-                    htmlFor="tree-min"
-                    className="text-[11px] font-medium text-muted-foreground"
-                  >
+                  <label htmlFor="tree-min" className="text-[11px] font-medium text-muted-foreground">
                     Minimum
                   </label>
 
@@ -756,15 +723,12 @@ export function BinaryTreeVisualizer() {
                     type="number"
                     value={minValue}
                     onChange={(e) => setMinValue(e.target.value)}
-                    className="h-7 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                   />
                 </div>
 
                 <div className="min-w-0 space-y-1">
-                  <label
-                    htmlFor="tree-max"
-                    className="text-[11px] font-medium text-muted-foreground"
-                  >
+                  <label htmlFor="tree-max" className="text-[11px] font-medium text-muted-foreground">
                     Maximum
                   </label>
 
@@ -773,14 +737,14 @@ export function BinaryTreeVisualizer() {
                     type="number"
                     value={maxValue}
                     onChange={(e) => setMaxValue(e.target.value)}
-                    className="h-7 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                   />
                 </div>
               </div>
 
               <Button
                 onClick={generateRandom}
-                className={`h-7 w-full text-xs ${primaryButton}`}
+                className={`h-8 w-full text-xs ${primaryButton}`}
               >
                 Generate Tree
               </Button>
@@ -832,15 +796,16 @@ export function BinaryTreeVisualizer() {
           </Alert>
         </aside>
 
-        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(380px,1fr)_minmax(380px,1fr)] gap-3 lg:grid-rows-2">
-          <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-2.5">
+        <section className="flex min-w-0 flex-col gap-3">
+          {/* Visualization card: height is determined by its content. */}
+          <Card className="min-w-0 overflow-hidden border-border bg-card shadow-sm">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3 sm:px-5">
               <div className="min-w-0">
-                <CardTitle className="text-base">
+                <CardTitle className="text-base sm:text-lg">
                   Visualization Playground
                 </CardTitle>
 
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs sm:text-sm">
                   Explore the tree structure and traversal output.
                 </CardDescription>
               </div>
@@ -859,7 +824,7 @@ export function BinaryTreeVisualizer() {
                   }
                   disabled={zoom <= MIN_ZOOM}
                   aria-label="Zoom out"
-                  className="h-7 w-7 p-0 text-base"
+                  className="h-8 w-8 p-0 text-base"
                 >
                   −
                 </Button>
@@ -868,7 +833,7 @@ export function BinaryTreeVisualizer() {
                   type="button"
                   onClick={() => setZoom(1)}
                   title="Reset zoom"
-                  className="h-7 min-w-[3.25rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
+                  className="h-8 min-w-[3.5rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
                 >
                   {Math.round(zoom * 100)}%
                 </button>
@@ -886,39 +851,39 @@ export function BinaryTreeVisualizer() {
                   }
                   disabled={zoom >= MAX_ZOOM}
                   aria-label="Zoom in"
-                  className="h-7 w-7 p-0 text-base"
+                  className="h-8 w-8 p-0 text-base"
                 >
                   +
                 </Button>
               </div>
             </CardHeader>
 
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-              <div className="grid shrink-0 grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
-                <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Root</p>
-                  <p className="break-words text-base font-bold">
+            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* These statistics are outside the zoomed canvas. */}
+              <div className="grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-muted/40 py-3 text-center">
+                <div className="min-w-0 px-2">
+                  <p className="text-xs text-muted-foreground">Root</p>
+                  <p className="break-words text-xl font-bold">
                     {root ? root.value : "—"}
                   </p>
                 </div>
 
-                <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Nodes</p>
-                  <p className="text-base font-bold">{stats.count}</p>
+                <div className="min-w-0 px-2">
+                  <p className="text-xs text-muted-foreground">Nodes</p>
+                  <p className="text-xl font-bold">{stats.count}</p>
                 </div>
 
-                <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Height</p>
-                  <p className="text-base font-bold">
-                    {stats.height || "—"}
-                  </p>
+                <div className="min-w-0 px-2">
+                  <p className="text-xs text-muted-foreground">Height</p>
+                  <p className="text-xl font-bold">{stats.height || "—"}</p>
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-muted/20 p-3">
+              {/* Fixed-height viewport; only its tree canvas is zoomed. */}
+              <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-3 sm:h-[420px] sm:p-4">
                 {!root ? (
-                  <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
-                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600 dark:bg-red-950/50">
+                  <div className="flex h-full min-h-[250px] flex-col items-center justify-center text-center">
+                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-3xl text-red-600 dark:bg-red-950/50">
                       ∅
                     </div>
 
@@ -931,18 +896,25 @@ export function BinaryTreeVisualizer() {
                     </p>
                   </div>
                 ) : (
-                  <div className="flex min-h-full min-w-full items-center justify-center">
+                  <div
+                    className="relative mx-auto shrink-0"
+                    style={{
+                      width: `${treeCanvasWidth * zoom}px`,
+                      height: `${treeCanvasHeight * zoom}px`,
+                    }}
+                  >
+                    {/* Zoom affects this SVG and the nodes together, not the cards. */}
                     <div
-                      className="relative min-w-[700px]"
+                      className="absolute left-0 top-0 origin-top-left"
                       style={{
-                        width: `${Math.max(700, 1000 * zoom)}px`,
-                        height: `${Math.max(230, stats.height * 90 + 40)}px`,
-                        zoom,
+                        width: `${treeCanvasWidth}px`,
+                        height: `${treeCanvasHeight}px`,
+                        transform: `scale(${zoom})`,
                       }}
                     >
                       <svg
                         className="absolute inset-0 h-full w-full overflow-visible"
-                        viewBox={`0 0 1000 ${Math.max(230, stats.height * 90 + 40)}`}
+                        viewBox={`0 0 1000 ${treeCanvasHeight}`}
                         preserveAspectRatio="none"
                         aria-hidden="true"
                       >
@@ -952,12 +924,12 @@ export function BinaryTreeVisualizer() {
                             <line
                               key={`edge-${item.node.id}`}
                               x1={item.parentX}
-                              y1={item.parentY! + 23}
+                              y1={item.parentY! + 28}
                               x2={item.x}
-                              y2={item.y - 23}
+                              y2={item.y - 28}
                               stroke="currentColor"
-                              strokeOpacity="0.35"
-                              strokeWidth="1.8"
+                              strokeOpacity="0.4"
+                              strokeWidth="2.2"
                             />
                           ))}
                       </svg>
@@ -965,24 +937,24 @@ export function BinaryTreeVisualizer() {
                       {positioned.map(({ node, x, y }) => (
                         <div
                           key={node.id}
-                          className={`absolute z-10 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-all duration-300 ${
+                          className={`absolute z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-16 sm:w-16 ${
                             activeNode === node.id
-                              ? "scale-110 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
+                              ? "border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/20 dark:bg-red-950/50 dark:text-red-100"
                               : node.id === root?.id
-                                ? "border-red-500 bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-100"
-                                : "border-border bg-card"
+                                ? "border-red-500 bg-red-50 text-red-950 shadow-md dark:bg-red-950/40 dark:text-red-100"
+                                : "border-border bg-card shadow-sm"
                           }`}
                           style={{
-                            left: `${x / 10}%`,
-                            top: y,
+                            left: `${x}px`,
+                            top: `${y}px`,
                           }}
                         >
-                          <span className="text-base font-bold leading-none">
+                          <span className="text-lg font-bold leading-none sm:text-xl">
                             {node.value}
                           </span>
 
                           {activeNode === node.id && (
-                            <span className="absolute -top-3 rounded-full bg-red-600 px-1.5 py-0.5 text-[8px] font-semibold text-white">
+                            <span className="absolute -top-4 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
                               ACTIVE
                             </span>
                           )}
@@ -993,16 +965,17 @@ export function BinaryTreeVisualizer() {
                 )}
               </div>
 
-              <div className="shrink-0 rounded-lg border border-border bg-card px-3 py-2">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold">Traversal Output</p>
+              {/* Traversal output remains at its normal size. */}
+              <div className="rounded-xl border border-border bg-card px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Traversal Output</p>
 
-                  <Badge variant="outline" className="text-[11px]">
+                  <Badge variant="outline" className="text-xs">
                     {traversal?.length ?? 0} values
                   </Badge>
                 </div>
 
-                <p className="break-words font-mono text-xs text-muted-foreground">
+                <p className="break-words font-mono text-sm text-muted-foreground">
                   {traversal !== null
                     ? traversal.length
                       ? traversal.join(" → ")
@@ -1013,10 +986,11 @@ export function BinaryTreeVisualizer() {
             </CardContent>
           </Card>
 
-          <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-            <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-2.5">
-                <div className="flex items-center justify-between gap-2">
+          {/* Pseudocode and complexity are separate, normal-sized cards. */}
+          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
+            <Card className="min-w-0 border-border bg-card shadow-sm">
+              <CardHeader className="border-b border-border px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="text-base">Pseudocode</CardTitle>
 
                   <Badge
@@ -1028,9 +1002,9 @@ export function BinaryTreeVisualizer() {
                 </div>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-slate-100 shadow-inner">
-                  <div className="min-w-max space-y-0.5 font-mono">
+              <CardContent className="min-w-0 space-y-4 p-4">
+                <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100 shadow-inner sm:text-sm">
+                  <div className="min-w-max space-y-1 font-mono">
                     {selectedCode.lines.map((line, index) => (
                       <div
                         key={`${operation}-${index}`}
@@ -1064,12 +1038,12 @@ export function BinaryTreeVisualizer() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border bg-muted/30 p-3">
-                  <h3 className="mb-2 text-sm font-semibold text-red-700 dark:text-red-300">
+                <div className="rounded-xl border border-border bg-muted/30 p-4">
+                  <h3 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-300">
                     How it works
                   </h3>
 
-                  <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed">
+                  <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed">
                     {selectedCode.explanation.map((step, index) => (
                       <li key={`${operation}-step-${index}`}>{step}</li>
                     ))}
@@ -1078,23 +1052,23 @@ export function BinaryTreeVisualizer() {
               </CardContent>
             </Card>
 
-            <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-2.5">
+            <Card className="min-w-0 border-border bg-card shadow-sm">
+              <CardHeader className="border-b border-border px-4 py-3">
                 <CardTitle className="text-base">Time Complexity</CardTitle>
 
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs sm:text-sm">
                   Complexity depends on the height of the tree.
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
-                  <div>
+              <CardContent className="space-y-4 p-4">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-4">
+                  <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">
                       {selectedCode.title}
                     </p>
 
-                    <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+                    <p className="mt-1 text-3xl font-bold text-red-700 dark:text-red-400">
                       {selectedCode.complexity}
                     </p>
                   </div>
@@ -1109,14 +1083,14 @@ export function BinaryTreeVisualizer() {
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-border">
-                  <table className="w-full border-collapse text-left text-xs">
+                  <table className="w-full border-collapse text-left text-xs sm:text-sm">
                     <thead>
                       <tr className="bg-muted/60">
-                        <th className="border-b border-border p-2">
+                        <th className="border-b border-border p-3">
                           Operation
                         </th>
-                        <th className="border-b border-border p-2">Time</th>
-                        <th className="border-b border-border p-2">Why?</th>
+                        <th className="border-b border-border p-3">Time</th>
+                        <th className="border-b border-border p-3">Why?</th>
                       </tr>
                     </thead>
 
@@ -1126,11 +1100,11 @@ export function BinaryTreeVisualizer() {
                           key={row.operation}
                           className="transition-colors hover:bg-muted/40"
                         >
-                          <td className="border-b border-border p-2 font-medium">
+                          <td className="border-b border-border p-3 font-medium">
                             {row.operation}
                           </td>
 
-                          <td className="border-b border-border p-2">
+                          <td className="border-b border-border p-3">
                             <Badge
                               variant="outline"
                               className={
@@ -1143,7 +1117,7 @@ export function BinaryTreeVisualizer() {
                             </Badge>
                           </td>
 
-                          <td className="border-b border-border p-2 text-muted-foreground">
+                          <td className="border-b border-border p-3 text-muted-foreground">
                             {row.why}
                           </td>
                         </tr>
@@ -1152,15 +1126,15 @@ export function BinaryTreeVisualizer() {
                   </table>
                 </div>
 
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  Here, <strong>h</strong> is the tree height and <strong>n</strong>{" "}
-                  is the number of nodes. A balanced BST has height O(log n); a
-                  skewed BST can have height O(n).
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Here, <strong>h</strong> is the tree height and{" "}
+                  <strong>n</strong> is the number of nodes. A balanced BST has
+                  height O(log n); a skewed BST can have height O(n).
                 </p>
               </CardContent>
             </Card>
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );

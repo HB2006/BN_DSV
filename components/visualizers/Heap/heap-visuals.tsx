@@ -293,7 +293,7 @@ export function HeapVisualizer() {
 
     const index = searchHeap(heap, n);
 
-    setActiveLine(index === -1 ? 4 : 3);
+    setActiveLine(index === -1 ? 4 : 2);
     setActiveNode(index === -1 ? null : heap[index].id);
     setTraversal(null);
 
@@ -368,7 +368,6 @@ export function HeapVisualizer() {
       () => Math.floor(Math.random() * (max - min + 1)) + min
     );
 
-    // Build a valid min-heap by inserting each generated value.
     let generated: HeapNode[] = [];
 
     values.forEach((n, index) => {
@@ -384,15 +383,31 @@ export function HeapVisualizer() {
     record(`Generated a min-heap with ${count} random nodes.`);
   }
 
+  const levels = Array.from(
+    { length: heap.length ? Math.floor(Math.log2(heap.length)) + 1 : 0 },
+    (_, level) => {
+      const start = 2 ** level - 1;
+      const end = Math.min(2 ** (level + 1) - 1, heap.length);
+
+      return {
+        level,
+        nodes: heap.slice(start, end).map((node, offset) => ({
+          node,
+          index: start + offset,
+        })),
+      };
+    }
+  );
+
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
+    <main className="min-h-screen bg-background text-foreground">
       {/* PAGE HEADER */}
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
             Min-Heap Visualizer
           </h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground sm:text-sm">
             Explore heap operations, array indices, pseudocode, and complexity.
           </p>
         </div>
@@ -405,10 +420,10 @@ export function HeapVisualizer() {
         </Badge>
       </header>
 
-      {/* BODY: SIDEBAR + RIGHT WORKSPACE */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
+      {/* SIDEBAR + WORKSPACE */}
+      <div className="grid grid-cols-1 items-start gap-4 px-4 pb-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         {/* LEFT SIDEBAR */}
-        <aside className="min-h-0 min-w-0 space-y-3 lg:overflow-y-auto lg:pr-1">
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
           {/* OPERATIONS */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="border-b border-border px-3 py-2">
@@ -426,50 +441,30 @@ export function HeapVisualizer() {
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder="Value"
-                  className="h-7 bg-background px-2 text-xs"
+                  className="h-8 bg-background px-2 text-xs"
                 />
               </div>
 
               <div className="space-y-1 pt-1">
-                <Button
-                  onClick={insert}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={insert} className={secondaryButton} variant="outline">
                   Insert
                 </Button>
-                <Button
-                  onClick={removeMinimum}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={removeMinimum} className={secondaryButton} variant="outline">
                   Delete Minimum
                 </Button>
-                <Button
-                  onClick={search}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={search} className={secondaryButton} variant="outline">
                   Search
                 </Button>
-                <Button
-                  onClick={peekMinimum}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={peekMinimum} className={secondaryButton} variant="outline">
                   Get Minimum
                 </Button>
-                <Button
-                  onClick={traverse}
-                  className={secondaryButton}
-                  variant="outline"
-                >
+                <Button onClick={traverse} className={secondaryButton} variant="outline">
                   Level-Order Traversal
                 </Button>
                 <Button
                   onClick={clearHeap}
-                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950"
                   variant="outline"
+                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950"
                 >
                   Clear Heap
                 </Button>
@@ -495,7 +490,7 @@ export function HeapVisualizer() {
                   max="30"
                   value={randomCount}
                   onChange={(e) => setRandomCount(e.target.value)}
-                  className="h-7 px-2 text-xs"
+                  className="h-8 px-2 text-xs"
                 />
               </div>
 
@@ -509,7 +504,7 @@ export function HeapVisualizer() {
                     type="number"
                     value={minValue}
                     onChange={(e) => setMinValue(e.target.value)}
-                    className="h-7 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                   />
                 </div>
 
@@ -522,14 +517,14 @@ export function HeapVisualizer() {
                     type="number"
                     value={maxValue}
                     onChange={(e) => setMaxValue(e.target.value)}
-                    className="h-7 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                   />
                 </div>
               </div>
 
               <Button
                 onClick={generateRandom}
-                className={`h-7 w-full text-xs ${primaryButton}`}
+                className={`h-8 w-full text-xs ${primaryButton}`}
               >
                 Generate Heap
               </Button>
@@ -582,11 +577,11 @@ export function HeapVisualizer() {
           </Alert>
         </aside>
 
-        {/* RIGHT WORKSPACE: TOP + BOTTOM */}
-        <div className="grid min-h-0 min-w-0 grid-rows-[minmax(380px,1fr)_minmax(380px,1fr)] gap-3 lg:grid-rows-2">
-          {/* TOP: VISUALIZATION PLAYGROUND */}
-          <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-2.5">
+        {/* RIGHT WORKSPACE */}
+        <section className="flex min-w-0 flex-col gap-4">
+          {/* VISUALIZATION */}
+          <Card className="min-w-0 border-border bg-card shadow-sm">
+            <CardHeader className="flex flex-wrap flex-row items-center justify-between gap-3 border-b border-border px-4 py-3">
               <div className="min-w-0">
                 <CardTitle className="text-base">
                   Visualization Playground
@@ -604,7 +599,7 @@ export function HeapVisualizer() {
                   onClick={zoomOut}
                   disabled={zoom <= MIN_ZOOM}
                   aria-label="Zoom out"
-                  className="h-7 w-7 p-0 text-base"
+                  className="h-8 w-8 p-0 text-base"
                 >
                   −
                 </Button>
@@ -613,7 +608,7 @@ export function HeapVisualizer() {
                   type="button"
                   onClick={resetZoom}
                   title="Reset zoom"
-                  className="h-7 min-w-[3.25rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
+                  className="h-8 min-w-[3.5rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
                 >
                   {Math.round(zoom * 100)}%
                 </button>
@@ -624,142 +619,137 @@ export function HeapVisualizer() {
                   onClick={zoomIn}
                   disabled={zoom >= MAX_ZOOM}
                   aria-label="Zoom in"
-                  className="h-7 w-7 p-0 text-base"
+                  className="h-8 w-8 p-0 text-base"
                 >
                   +
                 </Button>
               </div>
             </CardHeader>
 
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-              {/* STATISTICS */}
-              <div className="grid shrink-0 grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
+            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* STATISTICS - NOT AFFECTED BY ZOOM */}
+              <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
                 <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">
-                    Minimum
-                  </p>
+                  <p className="text-[11px] text-muted-foreground">Minimum</p>
                   <p className="break-words text-base font-bold">
                     {heap.length ? heap[0].value : "—"}
                   </p>
                 </div>
 
                 <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">
-                    Heap Size
-                  </p>
+                  <p className="text-[11px] text-muted-foreground">Heap Size</p>
                   <p className="text-base font-bold">{heap.length}</p>
                 </div>
 
                 <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">
-                    Height
-                  </p>
+                  <p className="text-[11px] text-muted-foreground">Height</p>
                   <p className="text-base font-bold">
                     {heap.length ? Math.floor(Math.log2(heap.length)) : "—"}
                   </p>
                 </div>
               </div>
 
-              {/* TREE PLAYGROUND */}
-              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-muted/20 p-4">
+              {/* TREE VIEWPORT */}
+              <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-4 sm:h-[420px]">
                 {heap.length === 0 ? (
                   <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
                     <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600 dark:bg-red-950/50">
                       ∅
                     </div>
                     <p className="text-lg font-semibold">Your heap is empty</p>
-                    <p className="mt-2 text-sm text-muted-foreground">
+                    <p className="mt-2 max-w-sm text-sm text-muted-foreground">
                       Insert a value or generate a random heap to begin.
                     </p>
                   </div>
                 ) : (
-                  <div
-                    className="flex min-h-full w-max min-w-full items-center justify-center"
-                    style={{ zoom }}
-                  >
-                    <div className="flex min-w-max flex-col items-center gap-7 py-5">
-                      {Array.from({
-                        length: Math.floor(Math.log2(heap.length)) + 1,
-                      }).map((_, level) => {
-                        const start = 2 ** level - 1;
-                        const end = Math.min(
-                          2 ** (level + 1) - 1,
-                          heap.length
-                        );
+                  <div className="flex min-h-full min-w-max items-start justify-center">
+                    {/* ZOOM APPLIES ONLY TO THE TREE */}
+                    <div
+                      className="origin-top"
+                      style={{
+                        zoom,
+                      }}
+                    >
+                      <div className="flex min-w-max flex-col items-center gap-7 py-5">
+                        {levels.map(({ level, nodes }) => {
+                          const levelWidth = 2 ** level;
 
-                        return (
-                          <div
-                            key={level}
-                            className="flex items-start justify-center gap-5 sm:gap-10"
-                          >
-                            {heap.slice(start, end).map((node, offset) => {
-                              const index = start + offset;
-                              const highlighted = activeNode === node.id;
-                              const left = 2 * index + 1;
-                              const right = 2 * index + 2;
+                          return (
+                            <div
+                              key={level}
+                              className="flex items-start justify-center gap-5 sm:gap-10"
+                              style={{
+                                minWidth: `${Math.max(levelWidth * 5, 100)}rem`,
+                              }}
+                            >
+                              {nodes.map(({ node, index }) => {
+                                const highlighted = activeNode === node.id;
+                                const left = 2 * index + 1;
+                                const right = 2 * index + 2;
 
-                              return (
-                                <div
-                                  key={node.id}
-                                  className="flex flex-col items-center gap-2"
-                                >
+                                return (
                                   <div
-                                    className={`relative flex h-16 w-16 flex-col items-center justify-center rounded-full border-2 transition-all duration-300 ${
-                                      highlighted
-                                        ? "scale-110 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
-                                        : index === 0
-                                          ? "border-red-500 bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-100"
-                                          : "border-border bg-card"
-                                    }`}
+                                    key={node.id}
+                                    className="flex w-20 shrink-0 flex-col items-center gap-2"
                                   >
-                                    {highlighted && (
-                                      <span className="absolute -top-3 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
-                                        ACTIVE
-                                      </span>
-                                    )}
+                                    <div
+                                      className={`relative flex h-16 w-16 flex-col items-center justify-center rounded-full border-2 transition-all duration-300 ${
+                                        highlighted
+                                          ? "scale-110 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
+                                          : index === 0
+                                            ? "border-red-500 bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-100"
+                                            : "border-border bg-card"
+                                      }`}
+                                    >
+                                      {highlighted && (
+                                        <span className="absolute -top-3 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                                          ACTIVE
+                                        </span>
+                                      )}
 
-                                    <span className="text-xl font-bold">
-                                      {node.value}
+                                      <span className="text-xl font-bold">
+                                        {node.value}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        [{index}]
+                                      </span>
+                                    </div>
+
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {index === 0 ? "ROOT" : `Index ${index}`}
                                     </span>
-                                    <span className="text-[10px] text-muted-foreground">
-                                      [{index}]
+
+                                    <span className="max-w-28 text-center text-[10px] text-muted-foreground">
+                                      {left < heap.length && right < heap.length
+                                        ? `Children: ${heap[left].value}, ${heap[right].value}`
+                                        : left < heap.length
+                                          ? `Left: ${heap[left].value}`
+                                          : right < heap.length
+                                            ? `Right: ${heap[right].value}`
+                                            : "Leaf"}
                                     </span>
                                   </div>
-
-                                  <span className="text-[11px] text-muted-foreground">
-                                    {index === 0 ? "ROOT" : `Index ${index}`}
-                                  </span>
-
-                                  <span className="max-w-28 text-center text-[10px] text-muted-foreground">
-                                    {left < heap.length && right < heap.length
-                                      ? `Children: ${heap[left].value}, ${heap[right].value}`
-                                      : left < heap.length
-                                        ? `Left: ${heap[left].value}`
-                                        : right < heap.length
-                                          ? `Right: ${heap[right].value}`
-                                          : "Leaf"}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* ARRAY REPRESENTATION */}
-              <div className="shrink-0 rounded-lg border border-border bg-card px-3 py-2">
-                <div className="mb-1 flex items-center justify-between gap-2">
+              {/* ARRAY REPRESENTATION - NOT AFFECTED BY ZOOM */}
+              <div className="rounded-lg border border-border bg-card px-3 py-2">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold">Heap Array</p>
                   <Badge variant="outline" className="text-[11px]">
                     {heap.length} elements
                   </Badge>
                 </div>
 
-                <div className="flex max-h-16 flex-wrap gap-1.5 overflow-auto">
+                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-auto">
                   {heap.length ? (
                     heap.map((node, index) => (
                       <div
@@ -793,12 +783,12 @@ export function HeapVisualizer() {
             </CardContent>
           </Card>
 
-          {/* BOTTOM: PSEUDOCODE + COMPLEXITY */}
-          <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-            {/* PSEUDOCODE PANEL */}
-            <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-2.5">
-                <div className="flex items-center justify-between gap-2">
+          {/* PSEUDOCODE + COMPLEXITY */}
+          <div className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-2">
+            {/* PSEUDOCODE */}
+            <Card className="flex min-w-0 flex-col border-border bg-card shadow-sm">
+              <CardHeader className="border-b border-border px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="text-base">Pseudocode</CardTitle>
                   <Badge
                     variant="outline"
@@ -809,7 +799,7 @@ export function HeapVisualizer() {
                 </div>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+              <CardContent className="space-y-3 p-3 sm:p-4">
                 <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-slate-100 shadow-inner">
                   <div className="min-w-max space-y-0.5 font-mono">
                     {selectedCode.lines.map((line, index) => (
@@ -859,17 +849,17 @@ export function HeapVisualizer() {
               </CardContent>
             </Card>
 
-            {/* COMPLEXITY PANEL */}
-            <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-2.5">
+            {/* TIME COMPLEXITY */}
+            <Card className="flex min-w-0 flex-col border-border bg-card shadow-sm">
+              <CardHeader className="border-b border-border px-4 py-3">
                 <CardTitle className="text-base">Time Complexity</CardTitle>
                 <CardDescription className="text-xs">
                   Selected operation and all heap operations.
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
+              <CardContent className="space-y-3 p-3 sm:p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
                   <div>
                     <p className="text-xs text-muted-foreground">
                       {selectedCode.title}
@@ -951,7 +941,7 @@ export function HeapVisualizer() {
               </CardContent>
             </Card>
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );
