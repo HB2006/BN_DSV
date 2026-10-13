@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import type { GraphData, GraphOperation } from "./type";
 import {
   addVertex,
@@ -31,6 +32,22 @@ type CodeInfo = {
   explanation: string[];
   complexity: string;
 };
+
+type HistoryEntry = {
+  id: number;
+  text: string;
+  op: GraphOperation;
+  before: GraphData;
+  after: GraphData;
+  activeId: number | null;
+  traversal: number[] | null;
+  path?: number[] | null; // vertex ids in visit order (BFS / DFS only)
+  line: number | null;
+};
+
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
+
+type Step = { line: number | null; run: () => void };
 
 const pseudocode: Record<GraphOperation, CodeInfo> = {
   "add-vertex": {
@@ -242,6 +259,10 @@ const secondaryButton =
 const WIDTH = 700;
 const HEIGHT = 400;
 const NODE_RADIUS = 23;
+const MAX_HISTORY = 50;
+
+// Pseudocode line that is highlighted each time a vertex is visited.
+const VISIT_LINE = { bfs: 5, dfs: 4 } as const;
 
 const initialGraph: GraphData = {
   nodes: [
@@ -262,6 +283,37 @@ const initialGraph: GraphData = {
   ],
 };
 
+function edgeKey(a: number, b: number): string {
+  return a < b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+// The edges the traversal actually used to discover each vertex.
+// BFS: discovered by the earliest-visited neighbor.
+// DFS: discovered by the most recently visited neighbor (the current stack top).
+function traversalTreeEdges(
+  graph: GraphData,
+  ids: number[],
+  order: "bfs" | "dfs"
+): Set<string> {
+  const keys = new Set<string>();
+  const adjacent = (a: number, b: number) =>
+    graph.edges.some(
+      (e) =>
+        (e.source === a && e.target === b) ||
+        (e.source === b && e.target === a)
+    );
+
+  for (let i = 1; i < ids.length; i++) {
+    const candidates = ids.slice(0, i).filter((u) => adjacent(u, ids[i]));
+    if (candidates.length === 0) continue;
+    const parent =
+      order === "bfs" ? candidates[0] : candidates[candidates.length - 1];
+    keys.add(edgeKey(parent, ids[i]));
+  }
+
+  return keys;
+}
+
 export function GraphVisualizer() {
   const [graph, setGraph] = useState<GraphData>(initialGraph);
   const [value, setValue] = useState("6");
@@ -273,20 +325,286 @@ export function GraphVisualizer() {
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const [activeNode, setActiveNode] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[] | null>(null);
+  const [visitedIds, setVisitedIds] = useState<number[]>([]);
   const [message, setMessage] = useState(
     "Choose an operation to get started."
   );
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [randomCount, setRandomCount] = useState("7");
   const [directed, setDirected] = useState(false);
 
+  // Playback + undo/redo state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState("1");
+  const [undoStack, setUndoStack] = useState<GraphData[]>([]);
+  const [redoStack, setRedoStack] = useState<GraphData[]>([]);
+
   const selectedCode = pseudocode[operation];
 
-  function record(text: string) {
-    setHistory((old) => [text, ...old].slice(0, 8));
-    setMessage(text);
-    setTraversal(null);
+  // Latest-value refs so timer callbacks never see stale state
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const nextIdRef = useRef(nextId);
+  nextIdRef.current = nextId;
+  const speedRef = useRef(animationSpeed);
+  speedRef.current = animationSpeed;
+
+  // Replay machinery
+  const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const traverseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const framesRef = useRef<Step[] | null>(null);
+  const frameIndexRef = useRef(0);
+  const replayOriginalRef = useRef<GraphData | null>(null);
+  const historyIdRef = useRef(1);
+
+  // New-vertex animation tracking
+  const [newIds, setNewIds] = useState<number[]>([]);
+  const prevIdsRef = useRef<Set<number>>(
+    new Set(initialGraph.nodes.map((n) => n.id))
+  );
+
+  const treeEdges = useMemo(
+    () =>
+      traversalTreeEdges(
+        graph,
+        visitedIds,
+        operation === "dfs" ? "dfs" : "bfs"
+      ),
+    [graph, visitedIds, operation]
+  );
+
+  // Detect any vertex that appeared (add, redo, undo of remove, generate, replay)
+  useEffect(() => {
+    const prev = prevIdsRef.current;
+    const ids = graph.nodes.map((n) => n.id);
+    const added = ids.filter((id) => !prev.has(id));
+    prevIdsRef.current = new Set(ids);
+
+    if (added.length === 0) {
+      setNewIds([]);
+      return;
+    }
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds([]), 1600);
+    return () => clearTimeout(t);
+  }, [graph]);
+
+  // Clear timers on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimer.current !== null) {
+        clearTimeout(playbackTimer.current);
+      }
+      if (traverseTimer.current !== null) {
+        clearTimeout(traverseTimer.current);
+      }
+    };
+  }, []);
+
+  function stopTraversalAnim() {
+    if (traverseTimer.current !== null) {
+      clearTimeout(traverseTimer.current);
+      traverseTimer.current = null;
+    }
   }
+
+  function record(text: string, meta?: HistoryMeta) {
+    if (meta) {
+      const entry: HistoryEntry = {
+        id: historyIdRef.current++,
+        text,
+        ...meta,
+      };
+      setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
+    }
+    setMessage(text);
+  }
+
+  function updateGraph(nextGraph: GraphData) {
+    const current = graphRef.current;
+    setUndoStack((old) => [...old, current]);
+    setRedoStack([]);
+    graphRef.current = nextGraph;
+    setGraph(nextGraph);
+    setActiveNode(null);
+    setTraversal(null);
+    setVisitedIds([]);
+  }
+
+  /* ---------- HISTORY REPLAY ---------- */
+
+  // Stops any replay / traversal animation and puts the real graph back
+  function abortReplay() {
+    stopTraversalAnim();
+    setVisitedIds([]);
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+    if (replayOriginalRef.current) {
+      const original = replayOriginalRef.current;
+      replayOriginalRef.current = null;
+      graphRef.current = original;
+      setGraph(original);
+    }
+    framesRef.current = null;
+    frameIndexRef.current = 0;
+    setReplayEntryId(null);
+    setActiveNode(null);
+    setActiveLine(null);
+  }
+
+  function runFrames() {
+    const tick = () => {
+      const frames = framesRef.current;
+      if (!frames) return;
+      const i = frameIndexRef.current;
+      if (i >= frames.length) {
+        playbackTimer.current = null;
+        framesRef.current = null;
+        frameIndexRef.current = 0;
+        setIsPlaying(false);
+        return;
+      }
+      frameIndexRef.current = i + 1;
+      setActiveLine(frames[i].line);
+      frames[i].run();
+      playbackTimer.current = setTimeout(
+        tick,
+        1000 / Number(speedRef.current)
+      );
+    };
+    tick();
+  }
+
+  function handlePause() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+  }
+
+  function handlePlay() {
+    if (isPlaying) return;
+
+    // Resume a paused replay
+    if (
+      framesRef.current &&
+      frameIndexRef.current < framesRef.current.length
+    ) {
+      setIsPlaying(true);
+      runFrames();
+      return;
+    }
+
+    if (history.length === 0) {
+      setMessage(
+        "No history to replay yet. Run a few operations, then press Play."
+      );
+      return;
+    }
+
+    stopTraversalAnim();
+    setVisitedIds([]);
+    const entries = history.slice().reverse(); // oldest first
+    const original = graphRef.current;
+    replayOriginalRef.current = original;
+
+    const frames: Step[] = [];
+
+    // 1. Rewind to the state before the first recorded operation
+    frames.push({
+      line: null,
+      run: () => {
+        const start = entries[0].before;
+        graphRef.current = start;
+        setGraph(start);
+        setActiveNode(null);
+        setTraversal(null);
+        setVisitedIds([]);
+        setReplayEntryId(null);
+        setMessage("Replay started from the initial state.");
+      },
+    });
+
+    // 2. Two frames per recorded operation: announce, then apply
+    entries.forEach((entry) => {
+      const title = pseudocode[entry.op].title;
+      frames.push({
+        line: 0,
+        run: () => {
+          setOperation(entry.op);
+          setReplayEntryId(entry.id);
+          setTraversal(null);
+          setVisitedIds([]);
+          setActiveNode(entry.op === "remove-vertex" ? entry.activeId : null);
+          setMessage(`Replaying: ${title}`);
+        },
+      });
+      frames.push({
+        line: entry.line,
+        run: () => {
+          graphRef.current = entry.after;
+          setGraph(entry.after);
+          setActiveNode(entry.op === "remove-vertex" ? null : entry.activeId);
+          setTraversal(entry.traversal);
+          setVisitedIds(entry.path ?? []);
+          setMessage(entry.text);
+        },
+      });
+    });
+
+    // 3. Put the real graph back (matters if you used Undo/Redo earlier)
+    frames.push({
+      line: null,
+      run: () => {
+        graphRef.current = original;
+        setGraph(original);
+        replayOriginalRef.current = null;
+        setReplayEntryId(null);
+        setActiveNode(null);
+        setMessage("Replay finished.");
+      },
+    });
+
+    framesRef.current = frames;
+    frameIndexRef.current = 0;
+    setIsPlaying(true);
+    runFrames();
+  }
+
+  /* ---------- UNDO / REDO ---------- */
+
+  function handleUndo() {
+    abortReplay();
+    if (undoStack.length === 0) return;
+    const current = graphRef.current;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((old) => [...old, current]);
+    setUndoStack((old) => old.slice(0, -1));
+    graphRef.current = previous;
+    setGraph(previous);
+    setTraversal(null);
+    setMessage("Undo successful.");
+  }
+
+  function handleRedo() {
+    abortReplay();
+    if (redoStack.length === 0) return;
+    const current = graphRef.current;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((old) => [...old, current]);
+    setRedoStack((old) => old.slice(0, -1));
+    graphRef.current = next;
+    setGraph(next);
+    setTraversal(null);
+    setMessage("Redo successful.");
+  }
+
+  /* ---------- OPERATIONS ---------- */
 
   function readValue(): number | null {
     if (value.trim() === "" || !Number.isFinite(Number(value))) {
@@ -315,8 +633,12 @@ export function GraphVisualizer() {
     const n = readValue();
     if (n === null) return;
 
+    abortReplay();
+    const before = graphRef.current;
+    const id = nextIdRef.current;
+
     try {
-      const angle = graph.nodes.length * 2.399963;
+      const angle = before.nodes.length * 2.399963;
       const radius = 125;
       const x = Math.max(
         40,
@@ -327,15 +649,23 @@ export function GraphVisualizer() {
         Math.min(HEIGHT - 40, HEIGHT / 2 + Math.sin(angle) * radius)
       );
 
-      const updated = addVertex(graph, n, nextId, x, y);
+      const updated = addVertex(before, n, id, x, y);
 
       setOperation("add-vertex");
       setActiveLine(3);
-      setActiveNode(nextId);
-      setGraph(updated);
-      setNextId((old) => old + 1);
+      updateGraph(updated);
+      setActiveNode(id);
+      nextIdRef.current = id + 1;
+      setNextId(id + 1);
 
-      record(`Added vertex ${n}.`);
+      record(`Added vertex ${n}.`, {
+        op: "add-vertex",
+        before,
+        after: updated,
+        activeId: id,
+        traversal: null,
+        line: 3,
+      });
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Could not add vertex."
@@ -347,20 +677,27 @@ export function GraphVisualizer() {
     const n = readValue();
     if (n === null) return;
 
+    abortReplay();
+    const before = graphRef.current;
+
     try {
-      const node = graph.nodes.find((item) => item.value === n);
-      const updated = removeVertex(graph, n);
+      const node = before.nodes.find((item) => item.value === n);
+      const updated = removeVertex(before, n);
 
       setOperation("remove-vertex");
       setActiveLine(4);
-      setActiveNode(null);
-      setGraph(updated);
+      updateGraph(updated);
 
-      record(`Removed vertex ${n} and its connected edges.`);
+      record(`Removed vertex ${n} and its connected edges.`, {
+        op: "remove-vertex",
+        before,
+        after: updated,
+        activeId: node?.id ?? null,
+        traversal: null,
+        line: 4,
+      });
       setSource((old) => (Number(old) === n ? "" : old));
       setTarget((old) => (Number(old) === n ? "" : old));
-
-      void node;
     } catch (error) {
       setOperation("remove-vertex");
       setActiveLine(1);
@@ -374,10 +711,12 @@ export function GraphVisualizer() {
     const endpoints = readEndpoints();
     if (!endpoints) return;
 
+    abortReplay();
+    const before = graphRef.current;
     const [from, to] = endpoints;
 
     try {
-      let updated = addEdge(graph, from, to);
+      const updated = addEdge(before, from, to);
 
       if (directed) {
         // In directed mode, the edge is interpreted as source -> target.
@@ -386,10 +725,16 @@ export function GraphVisualizer() {
 
       setOperation("add-edge");
       setActiveLine(6);
-      setActiveNode(null);
-      setGraph(updated);
+      updateGraph(updated);
 
-      record(`Added edge ${from} ${directed ? "→" : "↔"} ${to}.`);
+      record(`Added edge ${from} ${directed ? "→" : "↔"} ${to}.`, {
+        op: "add-edge",
+        before,
+        after: updated,
+        activeId: null,
+        traversal: null,
+        line: 6,
+      });
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Could not add edge."
@@ -401,17 +746,25 @@ export function GraphVisualizer() {
     const endpoints = readEndpoints();
     if (!endpoints) return;
 
+    abortReplay();
+    const before = graphRef.current;
     const [from, to] = endpoints;
 
     try {
-      const updated = removeEdge(graph, from, to);
+      const updated = removeEdge(before, from, to);
 
       setOperation("remove-edge");
       setActiveLine(4);
-      setActiveNode(null);
-      setGraph(updated);
+      updateGraph(updated);
 
-      record(`Removed edge between ${from} and ${to}.`);
+      record(`Removed edge between ${from} and ${to}.`, {
+        op: "remove-edge",
+        before,
+        after: updated,
+        activeId: null,
+        traversal: null,
+        line: 4,
+      });
     } catch (error) {
       setOperation("remove-edge");
       setActiveLine(2);
@@ -425,47 +778,112 @@ export function GraphVisualizer() {
     const n = readValue();
     if (n === null) return;
 
+    abortReplay();
+    const before = graphRef.current;
+
     setOperation("search");
-    setActiveLine(1);
     setTraversal(null);
 
-    const found = searchVertex(graph, n);
+    const found = searchVertex(before, n);
+    const line = found ? 2 : 3;
 
-    if (found) {
-      setActiveNode(found.id);
-      setActiveLine(2);
-      setMessage(`Found vertex ${n}.`);
-    } else {
-      setActiveNode(null);
-      setActiveLine(3);
-      setMessage(`Vertex ${n} was not found.`);
+    setActiveNode(found ? found.id : null);
+    setActiveLine(line);
+
+    record(found ? `Found vertex ${n}.` : `Vertex ${n} was not found.`, {
+      op: "search",
+      before,
+      after: before,
+      activeId: found ? found.id : null,
+      traversal: null,
+      line,
+    });
+  }
+
+  // Walks the traversal one vertex at a time, lighting up the path as it goes.
+  function runTraversal(
+    op: "bfs" | "dfs",
+    startValue: number,
+    values: number[],
+    before: GraphData
+  ) {
+    const ids = values
+      .map((v) => before.nodes.find((node) => node.value === v)?.id)
+      .filter((id): id is number => id !== undefined);
+    const visitLine = VISIT_LINE[op];
+    const label = op === "bfs" ? "BFS" : "DFS";
+
+    const finalText = values.length
+      ? `${label} from ${startValue}: ${values.join(" → ")}.`
+      : "No vertices were traversed.";
+
+    setOperation(op);
+    setActiveNode(null);
+
+    // Recorded up front so it appears in History; replay shows the full path.
+    record(finalText, {
+      op,
+      before,
+      after: before,
+      activeId: null,
+      traversal: values,
+      path: ids,
+      line: ids.length ? visitLine : null,
+    });
+
+    if (ids.length === 0) {
+      setTraversal([]);
+      setActiveLine(null);
+      return;
     }
+
+    setTraversal([]);
+    let step = 0;
+
+    const tick = () => {
+      setActiveLine(visitLine);
+      setActiveNode(ids[step]);
+      setVisitedIds(ids.slice(0, step + 1));
+      setTraversal(values.slice(0, step + 1));
+      setMessage(
+        `${label}: visiting ${values[step]} (${step + 1} of ${values.length})`
+      );
+      step++;
+
+      if (step < ids.length) {
+        traverseTimer.current = setTimeout(
+          tick,
+          800 / Number(speedRef.current)
+        );
+      } else {
+        traverseTimer.current = setTimeout(() => {
+          traverseTimer.current = null;
+          setActiveNode(null);
+          setActiveLine(null);
+          setMessage(finalText);
+        }, 800 / Number(speedRef.current));
+      }
+    };
+
+    tick();
   }
 
   function handleBFS() {
     const endpoints = readEndpoints();
     if (!endpoints) return;
 
+    abortReplay();
+    const before = graphRef.current;
     const startValue = endpoints[0];
 
+    setTraversal(null);
+
     try {
-      const result = bfs(graph, startValue);
-      const startNode = graph.nodes.find(
-        (node) => node.value === startValue
-      );
-
-      setOperation("bfs");
-      setActiveLine(3);
-      setActiveNode(startNode?.id ?? null);
-      setTraversal(result);
-
-      setMessage(
-        result.length
-          ? `BFS from ${startValue}: ${result.join(" → ")}.`
-          : "No vertices were traversed."
-      );
+      const result = bfs(before, startValue);
+      runTraversal("bfs", startValue, result, before);
     } catch (error) {
       setOperation("bfs");
+      setActiveNode(null);
       setMessage(
         error instanceof Error ? error.message : "BFS failed."
       );
@@ -477,26 +895,18 @@ export function GraphVisualizer() {
     const endpoints = readEndpoints();
     if (!endpoints) return;
 
+    abortReplay();
+    const before = graphRef.current;
     const startValue = endpoints[0];
 
+    setTraversal(null);
+
     try {
-      const result = dfs(graph, startValue);
-      const startNode = graph.nodes.find(
-        (node) => node.value === startValue
-      );
-
-      setOperation("dfs");
-      setActiveLine(0);
-      setActiveNode(startNode?.id ?? null);
-      setTraversal(result);
-
-      setMessage(
-        result.length
-          ? `DFS from ${startValue}: ${result.join(" → ")}.`
-          : "No vertices were traversed."
-      );
+      const result = dfs(before, startValue);
+      runTraversal("dfs", startValue, result, before);
     } catch (error) {
       setOperation("dfs");
+      setActiveNode(null);
       setMessage(
         error instanceof Error ? error.message : "DFS failed."
       );
@@ -505,13 +915,22 @@ export function GraphVisualizer() {
   }
 
   function handleClear() {
+    abortReplay();
+    const before = graphRef.current;
+    const after = clearGraph();
+
     setOperation("clear");
     setActiveLine(0);
-    setActiveNode(null);
-    setTraversal(null);
-    setGraph(clearGraph());
+    updateGraph(after);
 
-    record("Cleared the graph.");
+    record("Cleared the graph.", {
+      op: "clear",
+      before,
+      after,
+      activeId: null,
+      traversal: null,
+      line: 0,
+    });
   }
 
   function generateRandomGraph() {
@@ -526,6 +945,10 @@ export function GraphVisualizer() {
       return;
     }
 
+    abortReplay();
+    const before = graphRef.current;
+    const startId = nextIdRef.current;
+
     const centerX = WIDTH / 2;
     const centerY = HEIGHT / 2;
     const radiusX = Math.min(245, 70 + count * 13);
@@ -535,7 +958,7 @@ export function GraphVisualizer() {
       const angle = (2 * Math.PI * index) / count - Math.PI / 2;
 
       return {
-        id: nextId + index,
+        id: startId + index,
         value: index + 1,
         x: centerX + radiusX * Math.cos(angle),
         y: centerY + radiusY * Math.sin(angle),
@@ -564,18 +987,47 @@ export function GraphVisualizer() {
       }
     }
 
-    setGraph({ nodes, edges });
-    setNextId((old) => old + count);
+    const after: GraphData = { nodes, edges };
+
+    updateGraph(after);
+    nextIdRef.current = startId + count;
+    setNextId(startId + count);
     setOperation("bfs");
     setActiveLine(null);
-    setActiveNode(null);
-    setTraversal(null);
 
-    record(`Generated a graph with ${count} vertices.`);
+    record(`Generated a graph with ${count} vertices.`, {
+      op: "bfs",
+      before,
+      after,
+      activeId: null,
+      traversal: null,
+      line: null,
+    });
   }
 
   return (
     <main className="flex min-h-screen flex-col bg-background text-foreground">
+      <style>{`
+        @keyframes node-fade {
+          0%   { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        @keyframes ring-expand {
+          0%   { r: 23px; opacity: 0.75; }
+          100% { r: 46px; opacity: 0; }
+        }
+        @keyframes badge-pop {
+          0%   { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        .graph-new   { animation: node-fade 500ms ease-out both; }
+        .graph-ring  { animation: ring-expand 1200ms ease-out 300ms both; }
+        .graph-badge { animation: badge-pop 400ms ease-out both; }
+        @media (prefers-reduced-motion: reduce) {
+          .graph-new, .graph-ring, .graph-badge { animation: none !important; }
+        }
+      `}</style>
+
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -760,11 +1212,19 @@ export function GraphVisualizer() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
-              <CardTitle className="text-sm">History</CardTitle>
+              <div>
+                <CardTitle className="text-sm">History</CardTitle>
+                <CardDescription className="text-[11px]">
+                  Press Play to replay
+                </CardDescription>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setHistory([])}
+                onClick={() => {
+                  abortReplay();
+                  setHistory([]);
+                }}
                 className="h-6 px-2 text-[11px] text-muted-foreground"
               >
                 Clear
@@ -777,14 +1237,18 @@ export function GraphVisualizer() {
                   Recent operations appear here.
                 </p>
               ) : (
-                <ul className="space-y-1.5">
-                  {history.map((item, index) => (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {history.map((item) => (
                     <li
-                      key={`${item}-${index}`}
-                      className="flex gap-1.5 text-[11px] leading-snug"
+                      key={item.id}
+                      className={`flex gap-1.5 rounded px-1 text-[11px] leading-snug transition-colors ${
+                        replayEntryId === item.id
+                          ? "bg-red-50 font-medium text-red-800 dark:bg-red-950/40 dark:text-red-200"
+                          : ""
+                      }`}
                     >
                       <span className="font-bold text-red-600">↳</span>
-                      <span className="min-w-0 break-words">{item}</span>
+                      <span className="min-w-0 break-words">{item.text}</span>
                     </li>
                   ))}
                 </ul>
@@ -820,6 +1284,69 @@ export function GraphVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* PLAYBACK CONTROLS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" /> Play
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="gap-2"
+                  >
+                    <Pause className="h-4 w-4" /> Pause
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Undo2 className="h-4 w-4" /> Undo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Redo2 className="h-4 w-4" /> Redo
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <label htmlFor="animation-speed" className="text-sm">
+                    Speed
+                  </label>
+                  <select
+                    id="animation-speed"
+                    value={animationSpeed}
+                    onChange={(event) => setAnimationSpeed(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
                 <div className="px-1">
                   <p className="text-[11px] text-muted-foreground">Vertices</p>
@@ -898,10 +1425,15 @@ export function GraphVisualizer() {
                       const endY =
                         to.y - (dy / distance) * NODE_RADIUS;
 
-                      const highlighted =
-                        traversal !== null &&
-                        traversal.includes(from.value) &&
-                        traversal.includes(to.value);
+                      // Edge the traversal actually walked along
+                      const onPath = treeEdges.has(
+                        edgeKey(edge.source, edge.target)
+                      );
+                      // Edge between two visited vertices that was not used
+                      const betweenVisited =
+                        !onPath &&
+                        visitedIds.includes(edge.source) &&
+                        visitedIds.includes(edge.target);
 
                       return (
                         <g key={`${edge.source}-${edge.target}-${index}`}>
@@ -910,9 +1442,20 @@ export function GraphVisualizer() {
                             y1={startY}
                             x2={endX}
                             y2={endY}
-                            stroke={highlighted ? "#dc2626" : "#94a3b8"}
-                            strokeWidth={highlighted ? 3 : 2}
+                            stroke={
+                              onPath
+                                ? "#dc2626"
+                                : betweenVisited
+                                  ? "#fca5a5"
+                                  : "#94a3b8"
+                            }
+                            strokeWidth={
+                              onPath ? 4.5 : betweenVisited ? 2.5 : 2
+                            }
                             strokeLinecap="round"
+                            style={{
+                              transition: "stroke 300ms, stroke-width 300ms",
+                            }}
                           />
 
                           {edge.weight !== undefined && edge.weight !== 1 && (
@@ -931,12 +1474,27 @@ export function GraphVisualizer() {
 
                     {graph.nodes.map((node) => {
                       const highlighted = activeNode === node.id;
-                      const visited =
-                        traversal !== null &&
-                        traversal.includes(node.value);
+                      const visitIndex = visitedIds.indexOf(node.id);
+                      const visited = visitIndex !== -1;
+                      const isNew = newIds.includes(node.id);
 
                       return (
-                        <g key={node.id}>
+                        <g
+                          key={node.id}
+                          className={isNew ? "graph-new" : undefined}
+                        >
+                          {isNew && (
+                            <circle
+                              className="graph-ring"
+                              cx={node.x}
+                              cy={node.y}
+                              r={NODE_RADIUS}
+                              fill="none"
+                              stroke="#dc2626"
+                              strokeWidth="3"
+                            />
+                          )}
+
                           <circle
                             cx={node.x}
                             cy={node.y}
@@ -954,6 +1512,9 @@ export function GraphVisualizer() {
                                 : "#64748b"
                             }
                             strokeWidth={highlighted ? 4 : 2}
+                            style={{
+                              transition: "fill 300ms, stroke 300ms",
+                            }}
                           />
 
                           <text
@@ -977,6 +1538,41 @@ export function GraphVisualizer() {
                               fill="#dc2626"
                             >
                               ACTIVE
+                            </text>
+                          )}
+
+                          {visited && (
+                            <g>
+                              <circle
+                                cx={node.x - 17}
+                                cy={node.y + 17}
+                                r="9"
+                                fill="#0f172a"
+                              />
+                              <text
+                                x={node.x - 17}
+                                y={node.y + 20.5}
+                                textAnchor="middle"
+                                fontSize="10"
+                                fontWeight="700"
+                                fill="#ffffff"
+                              >
+                                {visitIndex + 1}
+                              </text>
+                            </g>
+                          )}
+
+                          {isNew && (
+                            <text
+                              className="graph-badge"
+                              x={node.x}
+                              y={node.y + NODE_RADIUS + 15}
+                              textAnchor="middle"
+                              fontSize="10"
+                              fontWeight="700"
+                              fill="#059669"
+                            >
+                              NEW
                             </text>
                           )}
                         </g>
