@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import type { ListNode, QueueOperation } from "./type";
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
+import type { ListNode } from "./type";
 import { enqueue } from "./queue-operation";
 
 import {
@@ -23,6 +24,23 @@ type Operation =
   | "search"
   | "traverse"
   | "clear";
+
+type NodeKey = string | number;
+
+type HistoryEntry = {
+  id: number;
+  text: string;
+  op: Operation;
+  before: ListNode[];
+  after: ListNode[];
+  activeId: NodeKey | null;
+  traversal: string[] | null;
+  line: number;
+};
+
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
+
+type Step = { line: number | null; run: () => void };
 
 const pseudocode: Record<
   Operation,
@@ -115,37 +133,20 @@ const pseudocode: Record<
       "    size = 0",
       "    return queue",
     ],
-    explanation:
-      "Clearing removes all elements and leaves the queue empty.",
+    explanation: "Clearing removes all elements and leaves the queue empty.",
   },
 };
 
 const complexity = [
-  {
-    operation: "Enqueue",
-    time: "O(1)",
-    why: "Add a node at the rear.",
-  },
-  {
-    operation: "Dequeue",
-    time: "O(1)",
-    why: "Remove the front element.",
-  },
-  {
-    operation: "Peek",
-    time: "O(1)",
-    why: "Read the front element directly.",
-  },
+  { operation: "Enqueue", time: "O(1)", why: "Add a node at the rear." },
+  { operation: "Dequeue", time: "O(1)", why: "Remove the front element." },
+  { operation: "Peek", time: "O(1)", why: "Read the front element directly." },
   {
     operation: "Search",
     time: "O(n)",
     why: "The target may be anywhere in the queue.",
   },
-  {
-    operation: "Traversal",
-    time: "O(n)",
-    why: "Visit every node once.",
-  },
+  { operation: "Traversal", time: "O(n)", why: "Visit every node once." },
   {
     operation: "Clear",
     time: "O(1)",
@@ -156,13 +157,14 @@ const complexity = [
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 1.8;
 const ZOOM_STEP = 0.1;
+const MAX_HISTORY = 50;
 
 function getNodeValue(node: ListNode): string {
   const item = node as ListNode & { data?: number | string };
   return String(item.value ?? item.data ?? "");
 }
 
-function getNodeId(node: ListNode, index: number): string | number {
+function getNodeId(node: ListNode, index: number): NodeKey {
   const item = node as ListNode & { id?: string | number };
   return item.id ?? `${getNodeValue(node)}-${index}`;
 }
@@ -176,23 +178,256 @@ export default function QueueVisualizer() {
   const [message, setMessage] = useState("Queue is ready.");
   const [operation, setOperation] = useState<Operation>("enqueue");
   const [activeLine, setActiveLine] = useState<number | null>(null);
-  const [highlightedValue, setHighlightedValue] = useState<string | null>(
-    null
-  );
+  const [highlightedId, setHighlightedId] = useState<NodeKey | null>(null);
   const [traversal, setTraversal] = useState<string[] | null>(null);
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
 
   const [randomCount, setRandomCount] = useState("5");
   const [randomMin, setRandomMin] = useState("1");
   const [randomMax, setRandomMax] = useState("99");
 
+  // Playback + undo/redo state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState("1");
+  const [undoStack, setUndoStack] = useState<ListNode[][]>([]);
+  const [redoStack, setRedoStack] = useState<ListNode[][]>([]);
+
+  // Latest-value refs so timer callbacks never see stale state
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
+  const nextIdRef = useRef(nextId);
+  nextIdRef.current = nextId;
+  const speedRef = useRef(animationSpeed);
+  speedRef.current = animationSpeed;
+
+  // Replay machinery
+  const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const framesRef = useRef<Step[] | null>(null);
+  const frameIndexRef = useRef(0);
+  const replayOriginalRef = useRef<ListNode[] | null>(null);
+  const historyIdRef = useRef(1);
+
+  // New-node animation tracking
+  const [newIds, setNewIds] = useState<NodeKey[]>([]);
+  const prevIdsRef = useRef<Set<NodeKey>>(new Set());
+
   const selectedCode = pseudocode[operation];
 
-  const recordHistory = (text: string) => {
-    setHistory((previous) => [text, ...previous].slice(0, 8));
+  // Detect any node that appeared (enqueue, redo, undo of dequeue, generate, replay)
+  useEffect(() => {
+    const prev = prevIdsRef.current;
+    const ids = queue.map((node, i) => getNodeId(node, i));
+    const added = ids.filter((id) => !prev.has(id));
+    prevIdsRef.current = new Set(ids);
+
+    if (added.length === 0) {
+      setNewIds([]);
+      return;
+    }
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds([]), 1600);
+    return () => clearTimeout(t);
+  }, [queue]);
+
+  // Clear playback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimer.current !== null) {
+        clearTimeout(playbackTimer.current);
+      }
+    };
+  }, []);
+
+  function recordHistory(text: string, meta?: HistoryMeta) {
+    if (meta) {
+      const entry: HistoryEntry = {
+        id: historyIdRef.current++,
+        text,
+        ...meta,
+      };
+      setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
+    }
     setMessage(text);
-  };
+  }
+
+  function updateQueue(nextQueue: ListNode[]) {
+    const current = queueRef.current;
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack([]);
+    queueRef.current = nextQueue;
+    setQueue(nextQueue);
+    setHighlightedId(null);
+    setTraversal(null);
+  }
+
+  /* ---------- HISTORY REPLAY ---------- */
+
+  // Stops any replay and puts the real queue back
+  function abortReplay() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+    if (replayOriginalRef.current) {
+      const original = replayOriginalRef.current;
+      replayOriginalRef.current = null;
+      queueRef.current = original;
+      setQueue(original);
+    }
+    framesRef.current = null;
+    frameIndexRef.current = 0;
+    setReplayEntryId(null);
+    setHighlightedId(null);
+    setActiveLine(null);
+  }
+
+  function runFrames() {
+    const tick = () => {
+      const frames = framesRef.current;
+      if (!frames) return;
+      const i = frameIndexRef.current;
+      if (i >= frames.length) {
+        playbackTimer.current = null;
+        framesRef.current = null;
+        frameIndexRef.current = 0;
+        setIsPlaying(false);
+        return;
+      }
+      frameIndexRef.current = i + 1;
+      setActiveLine(frames[i].line);
+      frames[i].run();
+      playbackTimer.current = setTimeout(
+        tick,
+        1000 / Number(speedRef.current)
+      );
+    };
+    tick();
+  }
+
+  function handlePause() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+  }
+
+  function handlePlay() {
+    if (isPlaying) return;
+
+    // Resume a paused replay
+    if (
+      framesRef.current &&
+      frameIndexRef.current < framesRef.current.length
+    ) {
+      setIsPlaying(true);
+      runFrames();
+      return;
+    }
+
+    if (history.length === 0) {
+      setMessage(
+        "No history to replay yet. Run a few operations, then press Play."
+      );
+      return;
+    }
+
+    const entries = history.slice().reverse(); // oldest first
+    const original = queueRef.current;
+    replayOriginalRef.current = original;
+
+    const frames: Step[] = [];
+
+    // 1. Rewind to the state before the first recorded operation
+    frames.push({
+      line: null,
+      run: () => {
+        const start = entries[0].before;
+        queueRef.current = start;
+        setQueue(start);
+        setHighlightedId(null);
+        setTraversal(null);
+        setReplayEntryId(null);
+        setMessage("Replay started from the initial state.");
+      },
+    });
+
+    // 2. Two frames per recorded operation: announce, then apply
+    entries.forEach((entry) => {
+      const title = pseudocode[entry.op].title;
+      frames.push({
+        line: 1,
+        run: () => {
+          setOperation(entry.op);
+          setReplayEntryId(entry.id);
+          setTraversal(null);
+          setHighlightedId(entry.op === "dequeue" ? entry.activeId : null);
+          setMessage(`Replaying: ${title}`);
+        },
+      });
+      frames.push({
+        line: entry.line,
+        run: () => {
+          queueRef.current = entry.after;
+          setQueue(entry.after);
+          setHighlightedId(entry.op === "dequeue" ? null : entry.activeId);
+          setTraversal(entry.traversal);
+          setMessage(entry.text);
+        },
+      });
+    });
+
+    // 3. Put the real queue back (matters if you used Undo/Redo earlier)
+    frames.push({
+      line: null,
+      run: () => {
+        queueRef.current = original;
+        setQueue(original);
+        replayOriginalRef.current = null;
+        setReplayEntryId(null);
+        setHighlightedId(null);
+        setMessage("Replay finished.");
+      },
+    });
+
+    framesRef.current = frames;
+    frameIndexRef.current = 0;
+    setIsPlaying(true);
+    runFrames();
+  }
+
+  /* ---------- UNDO / REDO ---------- */
+
+  function handleUndo() {
+    abortReplay();
+    if (undoStack.length === 0) return;
+    const current = queueRef.current;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((old) => [...old, [...current]]);
+    setUndoStack((old) => old.slice(0, -1));
+    queueRef.current = [...previous];
+    setQueue([...previous]);
+    setTraversal(null);
+    setMessage("Undo successful.");
+  }
+
+  function handleRedo() {
+    abortReplay();
+    if (redoStack.length === 0) return;
+    const current = queueRef.current;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack((old) => old.slice(0, -1));
+    queueRef.current = [...next];
+    setQueue([...next]);
+    setTraversal(null);
+    setMessage("Redo successful.");
+  }
+
+  /* ---------- OPERATIONS ---------- */
 
   const handleEnqueue = () => {
     if (inputValue.trim() === "") {
@@ -207,58 +442,87 @@ export default function QueueVisualizer() {
       return;
     }
 
-    // enqueue requires queue, value, and a unique ID.
-    const updatedQueue = enqueue(queue, value, nextId);
+    abortReplay();
+    const before = queueRef.current;
+    const id = nextIdRef.current;
+    const after = enqueue(before, value, id);
+    const newNodeId = getNodeId(after[after.length - 1], after.length - 1);
 
-    setQueue(updatedQueue);
-    setNextId((currentId) => currentId + 1);
     setOperation("enqueue");
-    setHighlightedValue(String(value));
-    setTraversal(null);
     setActiveLine(6);
+    updateQueue(after);
+    setHighlightedId(newNodeId);
+    nextIdRef.current = id + 1;
+    setNextId(id + 1);
     setInputValue("");
 
-    recordHistory(`Enqueued ${value}`);
+    recordHistory(`Enqueued ${value}`, {
+      op: "enqueue",
+      before,
+      after,
+      activeId: newNodeId,
+      traversal: null,
+      line: 6,
+    });
   };
 
   const handleDequeue = () => {
+    abortReplay();
+    const before = queueRef.current;
     setOperation("dequeue");
     setTraversal(null);
 
-    if (queue.length === 0) {
-      setHighlightedValue(null);
+    if (before.length === 0) {
+      setHighlightedId(null);
       setActiveLine(2);
       setMessage("Cannot dequeue: the queue is empty.");
       return;
     }
 
-    const removedValue = getNodeValue(queue[0]);
-    const updatedQueue = queue.slice(1);
+    const removed = before[0];
+    const removedValue = getNodeValue(removed);
+    const after = before.slice(1);
 
-    setQueue(updatedQueue);
-    setHighlightedValue(null);
     setActiveLine(5);
+    updateQueue(after);
 
-    recordHistory(`Dequeued ${removedValue}`);
+    recordHistory(`Dequeued ${removedValue}`, {
+      op: "dequeue",
+      before,
+      after,
+      activeId: getNodeId(removed, 0),
+      traversal: null,
+      line: 5,
+    });
   };
 
   const handlePeek = () => {
+    abortReplay();
+    const q = queueRef.current;
     setOperation("peek");
     setTraversal(null);
 
-    if (queue.length === 0) {
-      setHighlightedValue(null);
+    if (q.length === 0) {
+      setHighlightedId(null);
       setActiveLine(2);
       setMessage("The queue is empty. There is no front element.");
       return;
     }
 
-    const frontValue = getNodeValue(queue[0]);
+    const frontValue = getNodeValue(q[0]);
+    const frontId = getNodeId(q[0], 0);
 
-    setHighlightedValue(frontValue);
+    setHighlightedId(frontId);
     setActiveLine(4);
 
-    recordHistory(`Peeked front: ${frontValue}`);
+    recordHistory(`Peeked front: ${frontValue}`, {
+      op: "peek",
+      before: q,
+      after: q,
+      activeId: frontId,
+      traversal: null,
+      line: 4,
+    });
   };
 
   const handleSearch = () => {
@@ -274,47 +538,77 @@ export default function QueueVisualizer() {
       return;
     }
 
+    abortReplay();
+    const q = queueRef.current;
     setOperation("search");
     setTraversal(null);
 
-    const foundIndex = queue.findIndex(
+    const foundIndex = q.findIndex(
       (node) => getNodeValue(node) === String(target)
     );
 
-    if (foundIndex !== -1) {
-      setHighlightedValue(String(target));
-      setActiveLine(6);
-      recordHistory(`Found ${target} at position ${foundIndex}`);
-    } else {
-      setHighlightedValue(null);
-      setActiveLine(9);
-      recordHistory(`${target} was not found`);
-    }
+    const found = foundIndex !== -1;
+    const line = found ? 6 : 9;
+    const activeId = found ? getNodeId(q[foundIndex], foundIndex) : null;
+    const text = found
+      ? `Found ${target} at position ${foundIndex}`
+      : `${target} was not found`;
+
+    setHighlightedId(activeId);
+    setActiveLine(line);
+
+    recordHistory(text, {
+      op: "search",
+      before: q,
+      after: q,
+      activeId,
+      traversal: null,
+      line,
+    });
   };
 
   const handleTraverse = () => {
+    abortReplay();
+    const q = queueRef.current;
     setOperation("traverse");
     setActiveLine(4);
-    setHighlightedValue(null);
+    setHighlightedId(null);
 
-    const values = queue.map((node) => getNodeValue(node));
+    const values = q.map((node) => getNodeValue(node));
     setTraversal(values);
 
     recordHistory(
       values.length > 0
         ? `Traversed queue: ${values.join(" → ")}`
-        : "Traversed an empty queue"
+        : "Traversed an empty queue",
+      {
+        op: "traverse",
+        before: q,
+        after: q,
+        activeId: null,
+        traversal: values,
+        line: 4,
+      }
     );
   };
 
   const handleClear = () => {
-    setQueue([]);
-    setOperation("clear");
-    setHighlightedValue(null);
-    setTraversal(null);
-    setActiveLine(2);
+    abortReplay();
+    const before = queueRef.current;
+    const after: ListNode[] = [];
 
-    recordHistory("Cleared the queue");
+    setOperation("clear");
+    setActiveLine(2);
+    updateQueue(after);
+
+    recordHistory("Cleared the queue", {
+      op: "clear",
+      before,
+      after,
+      activeId: null,
+      traversal: null,
+      line: 2,
+    });
   };
 
   const handleGenerate = () => {
@@ -336,26 +630,34 @@ export default function QueueVisualizer() {
       return;
     }
 
+    abortReplay();
+    const before = queueRef.current;
     let generatedQueue: ListNode[] = [];
-    let id = nextId;
+    let id = nextIdRef.current;
 
     for (let i = 0; i < count; i++) {
       const value = Math.floor(Math.random() * (max - min + 1)) + min;
-
       generatedQueue = enqueue(generatedQueue, value, id);
       id++;
     }
 
-    setQueue(generatedQueue);
+    updateQueue(generatedQueue);
+    nextIdRef.current = id;
     setNextId(id);
     setOperation("traverse");
-    setHighlightedValue(null);
     setActiveLine(null);
 
     const values = generatedQueue.map((node) => getNodeValue(node));
     setTraversal(values);
 
-    recordHistory(`Generated a queue with ${generatedQueue.length} nodes`);
+    recordHistory(`Generated a queue with ${generatedQueue.length} nodes`, {
+      op: "traverse",
+      before,
+      after: generatedQueue,
+      activeId: null,
+      traversal: values,
+      line: 4,
+    });
   };
 
   const handleZoomIn = () => {
@@ -371,8 +673,27 @@ export default function QueueVisualizer() {
   };
 
   return (
-    /* FIX 1: no h-screen / overflow-hidden — the page scrolls naturally */
     <main className="flex min-h-screen flex-col bg-background text-foreground">
+      <style>{`
+        @keyframes node-enter {
+          0%   { opacity: 0; transform: translateX(70px) scale(0.9); }
+          60%  { opacity: 1; transform: translateX(-6px) scale(1.03); }
+          100% { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes node-glow {
+          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
+        }
+        @keyframes badge-pop {
+          0%   { transform: scale(0); }
+          60%  { transform: scale(1.25); }
+          100% { transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .anim-new { animation: none !important; }
+        }
+      `}</style>
+
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -388,9 +709,8 @@ export default function QueueVisualizer() {
         </Badge>
       </header>
 
-      {/* FIX 2: no min-h-0 / flex-1; items-start so columns don't stretch */}
-      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        {/* FIX 3: sticky sidebar with a max height */}
+      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
+        {/* LEFT SIDEBAR */}
         <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           <Card>
             <CardHeader className="p-3 pb-2">
@@ -533,11 +853,19 @@ export default function QueueVisualizer() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between p-3 pb-2">
-              <CardTitle className="text-sm">History</CardTitle>
+              <div>
+                <CardTitle className="text-sm">History</CardTitle>
+                <CardDescription className="text-xs">
+                  Press Play to replay
+                </CardDescription>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setHistory([])}
+                onClick={() => {
+                  abortReplay();
+                  setHistory([]);
+                }}
                 className="h-6 px-2 text-xs text-muted-foreground"
               >
                 Clear
@@ -550,13 +878,17 @@ export default function QueueVisualizer() {
                   Operations will appear here.
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {history.map((item, index) => (
+                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                  {history.map((item) => (
                     <div
-                      key={`${item}-${index}`}
-                      className="border-l-2 border-red-200 pl-2 text-xs text-muted-foreground"
+                      key={item.id}
+                      className={`border-l-2 pl-2 text-xs transition-colors ${
+                        replayEntryId === item.id
+                          ? "border-red-600 bg-red-50 font-medium text-red-800"
+                          : "border-red-200 text-muted-foreground"
+                      }`}
                     >
-                      {item}
+                      {item.text}
                     </div>
                   ))}
                 </div>
@@ -571,9 +903,8 @@ export default function QueueVisualizer() {
           </Alert>
         </aside>
 
-        {/* FIX 4: simple vertical flow, no grid-rows-2 */}
+        {/* RIGHT CONTENT */}
         <section className="flex min-w-0 flex-col gap-3">
-          {/* FIX 5: card sizes to its content */}
           <Card className="min-w-0 overflow-hidden">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
               <div>
@@ -624,6 +955,70 @@ export default function QueueVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* PLAYBACK CONTROLS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" /> Play
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="gap-2"
+                  >
+                    <Pause className="h-4 w-4" /> Pause
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Undo2 className="h-4 w-4" /> Undo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Redo2 className="h-4 w-4" /> Redo
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <label htmlFor="animation-speed" className="text-sm">
+                    Speed
+                  </label>
+                  <select
+                    id="animation-speed"
+                    value={animationSpeed}
+                    onChange={(event) => setAnimationSpeed(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* STATISTICS */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg border bg-muted/20 p-2">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
@@ -653,8 +1048,7 @@ export default function QueueVisualizer() {
                 </div>
               </div>
 
-              {/* FIX 6: fixed-height scroll area; m-auto on the child so
-                  long queues scroll instead of being clipped on the left */}
+              {/* QUEUE DIAGRAM */}
               <div className="flex flex-col overflow-hidden rounded-lg border bg-muted/10">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-xs font-medium">Queue Structure</span>
@@ -663,7 +1057,7 @@ export default function QueueVisualizer() {
                   </Badge>
                 </div>
 
-                <div className="flex h-[280px] overflow-auto p-4">
+                <div className="flex h-[260px] overflow-auto p-4">
                   {queue.length === 0 ? (
                     <div className="m-auto text-center">
                       <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
@@ -676,7 +1070,7 @@ export default function QueueVisualizer() {
                     </div>
                   ) : (
                     <div
-                      className="m-auto flex min-w-max items-center gap-3 px-3 py-4 transition-transform"
+                      className="m-auto flex min-w-max items-center gap-3 py-4 transition-transform"
                       style={{ zoom }}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -688,18 +1082,32 @@ export default function QueueVisualizer() {
 
                       {queue.map((node, index) => {
                         const value = getNodeValue(node);
-                        const isHighlighted = highlightedValue === value;
+                        const nodeId = getNodeId(node, index);
+                        const isHighlighted = highlightedId === nodeId;
                         const isFront = index === 0;
                         const isRear = index === queue.length - 1;
+                        const isNew = newIds.includes(nodeId);
+                        const newOrder = newIds.indexOf(nodeId);
 
                         return (
                           <div
-                            key={getNodeId(node, index)}
+                            key={nodeId}
                             className="flex items-center gap-3"
                           >
                             <div className="flex flex-col items-center gap-2">
                               <div
-                                className={`flex h-16 min-w-16 items-center justify-center rounded-xl border-2 px-3 text-lg font-bold shadow-sm transition-all ${
+                                style={
+                                  isNew
+                                    ? {
+                                        animation: `node-enter 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                                          newOrder * 120
+                                        }ms both, node-glow 1200ms ease-out ${
+                                          600 + newOrder * 120
+                                        }ms`,
+                                      }
+                                    : undefined
+                                }
+                                className={`anim-new relative flex h-16 min-w-16 items-center justify-center rounded-xl border-2 px-3 text-lg font-bold shadow-sm transition-colors ${
                                   isHighlighted
                                     ? "border-red-600 bg-red-100 text-red-800 ring-2 ring-red-300"
                                     : isFront
@@ -708,6 +1116,17 @@ export default function QueueVisualizer() {
                                 }`}
                               >
                                 {value}
+                                {isNew && (
+                                  <span
+                                    className="absolute -right-2 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                    style={{
+                                      animation:
+                                        "badge-pop 400ms ease-out both",
+                                    }}
+                                  >
+                                    NEW
+                                  </span>
+                                )}
                               </div>
 
                               <span className="text-[10px] text-muted-foreground">
@@ -753,6 +1172,7 @@ export default function QueueVisualizer() {
                 </div>
               </div>
 
+              {/* QUEUE REPRESENTATION */}
               <div className="rounded-lg border p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold">Queue Representation</p>
@@ -765,22 +1185,34 @@ export default function QueueVisualizer() {
                   {queue.length === 0 ? (
                     <span className="text-xs text-muted-foreground">[]</span>
                   ) : (
-                    queue.map((node, index) => (
-                      <div
-                        key={`${getNodeId(node, index)}-array`}
-                        className={`rounded-md border px-3 py-1.5 font-mono text-xs ${
-                          highlightedValue === getNodeValue(node)
-                            ? "border-red-400 bg-red-50 font-semibold text-red-700"
-                            : "bg-muted/20"
-                        }`}
-                      >
-                        {getNodeValue(node)}
-                      </div>
-                    ))
+                    queue.map((node, index) => {
+                      const nodeId = getNodeId(node, index);
+                      return (
+                        <div
+                          key={`${nodeId}-array`}
+                          style={
+                            newIds.includes(nodeId)
+                              ? {
+                                  animation:
+                                    "node-enter 500ms ease-out both, node-glow 1000ms ease-out 500ms",
+                                }
+                              : undefined
+                          }
+                          className={`anim-new rounded-md border px-3 py-1.5 font-mono text-xs ${
+                            highlightedId === nodeId
+                              ? "border-red-400 bg-red-50 font-semibold text-red-700"
+                              : "bg-muted/20"
+                          }`}
+                        >
+                          {getNodeValue(node)}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
 
+              {/* TRAVERSAL OUTPUT */}
               <div className="rounded-lg border bg-muted/10 p-3">
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-semibold">
@@ -790,9 +1222,7 @@ export default function QueueVisualizer() {
                     {complexity.find(
                       (item) =>
                         item.operation.toLowerCase() ===
-                        (operation === "traverse"
-                          ? "traversal"
-                          : operation)
+                        (operation === "traverse" ? "traversal" : operation)
                     )?.time ?? "O(n)"}
                   </Badge>
                 </div>
@@ -828,7 +1258,7 @@ export default function QueueVisualizer() {
             </CardContent>
           </Card>
 
-          {/* FIX 8: no fixed min height; inner areas scroll with max-h */}
+          {/* BOTTOM ROW: PSEUDOCODE + COMPLEXITY */}
           <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
             <Card className="flex min-w-0 flex-col overflow-hidden">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
@@ -900,9 +1330,7 @@ export default function QueueVisualizer() {
                       <div
                         key={item.operation}
                         className={`rounded-lg border p-3 transition-colors ${
-                          isActive
-                            ? "border-red-300 bg-red-50/70"
-                            : "bg-card"
+                          isActive ? "border-red-300 bg-red-50/70" : "bg-card"
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -930,8 +1358,8 @@ export default function QueueVisualizer() {
                 <div className="mt-3 rounded-lg border bg-muted/20 p-3">
                   <p className="text-xs font-semibold">Space Complexity</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    A queue storing n elements requires O(n) space. Enqueue
-                    and dequeue take O(1) time per operation.
+                    A queue storing n elements requires O(n) space. Enqueue and
+                    dequeue take O(1) time per operation.
                   </p>
                 </div>
               </CardContent>
