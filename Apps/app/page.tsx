@@ -17,11 +17,11 @@ export default function HomePage() {
         </p>
 
         <h1 className="mb-6 text-4xl font-bold tracking-tight sm:text-6xl">
-          Data Structure Visualizer
+          Data Structure Visualizer by BINARY NINJAS
         </h1>
 
         <p className="mx-auto mb-8 max-w-lg text-base leading-7 text-muted-foreground sm:text-lg">
-          Explore data structures through interactive visualizations.
+          Explore the fundamental data structures through interactive visualizations.
           Understand how they work, perform operations, and learn
           their time and space complexities.
         </p>
