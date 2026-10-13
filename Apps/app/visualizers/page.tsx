@@ -22,4 +22,10 @@ export default function VisualizerHomePage() {
       </p>
     </div>
   );
+<<<<<<< HEAD
 }
+=======
+}
+
+
+>>>>>>> f9472cbf1c19b0463644e105f74decb715593748
