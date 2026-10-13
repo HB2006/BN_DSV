@@ -204,7 +204,7 @@ const complexityRows = [
 ];
 
 const primaryButton =
-  "bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500";
+   "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
 
 const secondaryButton =
   "h-7 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
@@ -1273,8 +1273,8 @@ export function HeapVisualizer() {
                         key={`${operation}-${index}`}
                         className={`flex items-start gap-3 rounded px-2 py-1 transition-colors duration-200 ${
                           activeLine === index
-                            ? "bg-red-500/20 text-red-200 ring-1 ring-red-500/50"
-                            : "hover:bg-slate-800/70"
+                            ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
+                            : "hover:bg-[#D8A7B1]/10"
                         }`}
                       >
                         <span className="w-5 shrink-0 select-none text-right text-slate-500">

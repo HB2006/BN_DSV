@@ -159,7 +159,7 @@ const complexityRows = [
 ];
 
 const primaryButton =
-  "bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500";
+  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
 
 const MAX_HISTORY = 50;
 
@@ -1168,7 +1168,7 @@ export function StackVisualizer() {
                       key={`${operation}-${index}`}
                       className={`flex min-w-max gap-3 rounded px-2 py-1 ${
                         activeLine === index
-                          ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
+                          ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
                           : ""
                       }`}
                     >
