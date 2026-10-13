@@ -1,6 +1,6 @@
 "use client";
-
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import type { StackNode } from "./type";
 import {
   push,
@@ -9,7 +9,6 @@ import {
   searchStack,
   clearStack,
 } from "./stack-operation";
-
 import {
   Card,
   CardContent,
@@ -22,13 +21,22 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-type Operation =
-  | "push"
-  | "pop"
-  | "peek"
-  | "search"
-  | "traverse"
-  | "clear";
+type Operation = "push" | "pop" | "peek" | "search" | "traverse" | "clear";
+
+type HistoryEntry = {
+  id: number;
+  text: string;
+  op: Operation;
+  before: StackNode[];
+  after: StackNode[];
+  activeId: number | null;
+  traversal: number[] | null;
+  line: number;
+};
+
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
+
+type Step = { line: number | null; run: () => void };
 
 const pseudocode: Record<
   Operation,
@@ -142,46 +150,18 @@ const pseudocode: Record<
 };
 
 const complexityRows = [
-  {
-    operation: "Push",
-    key: "push",
-    time: "O(1)",
-    why: "Add an element to the top.",
-  },
-  {
-    operation: "Pop",
-    key: "pop",
-    time: "O(1)",
-    why: "Remove the top element.",
-  },
-  {
-    operation: "Peek",
-    key: "peek",
-    time: "O(1)",
-    why: "Read the top element.",
-  },
-  {
-    operation: "Search",
-    key: "search",
-    time: "O(n)",
-    why: "May inspect every element.",
-  },
-  {
-    operation: "Traverse",
-    key: "traverse",
-    time: "O(n)",
-    why: "Visit every element once.",
-  },
-  {
-    operation: "Clear Stack",
-    key: "clear",
-    time: "O(1)",
-    why: "Replace the stack with an empty array.",
-  },
+  { operation: "Push", key: "push", time: "O(1)", why: "Add an element to the top." },
+  { operation: "Pop", key: "pop", time: "O(1)", why: "Remove the top element." },
+  { operation: "Peek", key: "peek", time: "O(1)", why: "Read the top element." },
+  { operation: "Search", key: "search", time: "O(n)", why: "May inspect every element." },
+  { operation: "Traverse", key: "traverse", time: "O(n)", why: "Visit every element once." },
+  { operation: "Clear Stack", key: "clear", time: "O(1)", why: "Replace the stack with an empty array." },
 ];
 
 const primaryButton =
   "bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500";
+
+const MAX_HISTORY = 50;
 
 export function StackVisualizer() {
   const [stack, setStack] = useState<StackNode[]>([
@@ -189,30 +169,78 @@ export function StackVisualizer() {
     { id: 2, value: 20 },
     { id: 3, value: 30 },
   ]);
-
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState("1");
+  const [undoStack, setUndoStack] = useState<StackNode[][]>([]);
+  const [redoStack, setRedoStack] = useState<StackNode[][]>([]);
   const [value, setValue] = useState("40");
   const [nextId, setNextId] = useState(4);
-
   const [activeNode, setActiveNode] = useState<number | null>(null);
   const [operation, setOperation] = useState<Operation>("push");
   const [activeLine, setActiveLine] = useState<number | null>(null);
-
-  const [message, setMessage] = useState(
-    "Choose an operation to get started."
-  );
-
-  const [history, setHistory] = useState<string[]>([]);
+  const [message, setMessage] = useState("Choose an operation to get started.");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[] | null>(null);
   const [zoom, setZoom] = useState(1);
-
   const [randomCount, setRandomCount] = useState("5");
   const [randomMin, setRandomMin] = useState("1");
   const [randomMax, setRandomMax] = useState("99");
 
+  // Latest-value refs so timer callbacks never see stale state
+  const stackRef = useRef(stack);
+  stackRef.current = stack;
+  const nextIdRef = useRef(nextId);
+  nextIdRef.current = nextId;
+  const speedRef = useRef(animationSpeed);
+  speedRef.current = animationSpeed;
+
+  // Replay machinery
+  const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const framesRef = useRef<Step[] | null>(null);
+  const frameIndexRef = useRef(0);
+  const replayOriginalRef = useRef<StackNode[] | null>(null);
+  const historyIdRef = useRef(1);
+
+  // New-node animation tracking
+  const [newIds, setNewIds] = useState<number[]>([]);
+  const prevIdsRef = useRef<Set<number>>(new Set(stack.map((n) => n.id)));
+
   const selectedCode = pseudocode[operation];
 
-  function recordHistory(text: string) {
-    setHistory((old) => [text, ...old].slice(0, 8));
+  // Detect any node that appeared (push, redo, undo of pop, generate, replay)
+  useEffect(() => {
+    const prev = prevIdsRef.current;
+    const added = stack.filter((n) => !prev.has(n.id)).map((n) => n.id);
+    prevIdsRef.current = new Set(stack.map((n) => n.id));
+
+    if (added.length === 0) {
+      setNewIds([]);
+      return;
+    }
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds([]), 1600);
+    return () => clearTimeout(t);
+  }, [stack]);
+
+  // Clear playback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimer.current !== null) {
+        clearTimeout(playbackTimer.current);
+      }
+    };
+  }, []);
+
+  function recordHistory(text: string, meta?: HistoryMeta) {
+    if (meta) {
+      const entry: HistoryEntry = {
+        id: historyIdRef.current++,
+        text,
+        ...meta,
+      };
+      setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
+    }
     setMessage(text);
   }
 
@@ -221,121 +249,330 @@ export function StackVisualizer() {
       setMessage("Enter a valid number first.");
       return null;
     }
-
     return Number(value);
   }
+
+  function updateStack(nextStack: StackNode[]) {
+    const current = stackRef.current;
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack([]);
+    stackRef.current = nextStack;
+    setStack(nextStack);
+    setActiveNode(null);
+    setTraversal(null);
+  }
+
+  /* ---------- HISTORY REPLAY ---------- */
+
+  // Stops any replay and puts the real stack back
+  function abortReplay() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+    if (replayOriginalRef.current) {
+      const original = replayOriginalRef.current;
+      replayOriginalRef.current = null;
+      stackRef.current = original;
+      setStack(original);
+    }
+    framesRef.current = null;
+    frameIndexRef.current = 0;
+    setReplayEntryId(null);
+    setActiveNode(null);
+    setActiveLine(null);
+  }
+
+  function runFrames() {
+    const tick = () => {
+      const frames = framesRef.current;
+      if (!frames) return;
+      const i = frameIndexRef.current;
+      if (i >= frames.length) {
+        playbackTimer.current = null;
+        framesRef.current = null;
+        frameIndexRef.current = 0;
+        setIsPlaying(false);
+        return;
+      }
+      frameIndexRef.current = i + 1;
+      setActiveLine(frames[i].line);
+      frames[i].run();
+      playbackTimer.current = setTimeout(
+        tick,
+        1000 / Number(speedRef.current)
+      );
+    };
+    tick();
+  }
+
+  function handlePause() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+  }
+
+  function handlePlay() {
+    if (isPlaying) return;
+
+    // Resume a paused replay
+    if (
+      framesRef.current &&
+      frameIndexRef.current < framesRef.current.length
+    ) {
+      setIsPlaying(true);
+      runFrames();
+      return;
+    }
+
+    if (history.length === 0) {
+      setMessage(
+        "No history to replay yet. Run a few operations, then press Play."
+      );
+      return;
+    }
+
+    const entries = history.slice().reverse(); // oldest first
+    const original = stackRef.current;
+    replayOriginalRef.current = original;
+
+    const frames: Step[] = [];
+
+    // 1. Rewind to the state before the first recorded operation
+    frames.push({
+      line: null,
+      run: () => {
+        const start = entries[0].before;
+        stackRef.current = start;
+        setStack(start);
+        setActiveNode(null);
+        setTraversal(null);
+        setReplayEntryId(null);
+        setMessage("Replay started from the initial state.");
+      },
+    });
+
+    // 2. Two frames per recorded operation: announce, then apply
+    entries.forEach((entry) => {
+      const title = pseudocode[entry.op].title;
+      frames.push({
+        line: 1,
+        run: () => {
+          setOperation(entry.op);
+          setReplayEntryId(entry.id);
+          setTraversal(null);
+          setActiveNode(entry.op === "pop" ? entry.activeId : null);
+          setMessage(`Replaying: ${title}`);
+        },
+      });
+      frames.push({
+        line: entry.line,
+        run: () => {
+          stackRef.current = entry.after;
+          setStack(entry.after);
+          setActiveNode(entry.op === "pop" ? null : entry.activeId);
+          setTraversal(entry.traversal);
+          setMessage(entry.text);
+        },
+      });
+    });
+
+    // 3. Put the real stack back (matters if you used Undo/Redo earlier)
+    frames.push({
+      line: null,
+      run: () => {
+        stackRef.current = original;
+        setStack(original);
+        replayOriginalRef.current = null;
+        setReplayEntryId(null);
+        setActiveNode(null);
+        setMessage("Replay finished.");
+      },
+    });
+
+    framesRef.current = frames;
+    frameIndexRef.current = 0;
+    setIsPlaying(true);
+    runFrames();
+  }
+
+  /* ---------- UNDO / REDO ---------- */
+
+  function handleUndo() {
+    abortReplay();
+    if (undoStack.length === 0) return;
+    const current = stackRef.current;
+    const previousStack = undoStack[undoStack.length - 1];
+    setRedoStack((old) => [...old, [...current]]);
+    setUndoStack((old) => old.slice(0, -1));
+    stackRef.current = [...previousStack];
+    setStack([...previousStack]);
+    setTraversal(null);
+    setMessage("Undo successful.");
+  }
+
+  function handleRedo() {
+    abortReplay();
+    if (redoStack.length === 0) return;
+    const current = stackRef.current;
+    const nextStack = redoStack[redoStack.length - 1];
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack((old) => old.slice(0, -1));
+    stackRef.current = [...nextStack];
+    setStack([...nextStack]);
+    setTraversal(null);
+    setMessage("Redo successful.");
+  }
+
+  /* ---------- OPERATIONS (sidebar buttons) ---------- */
 
   function handlePush() {
     const n = readNumber();
     if (n === null) return;
-
+    abortReplay();
+    const before = stackRef.current;
+    const id = nextIdRef.current;
+    const after = push(before, n, id);
     setOperation("push");
     setActiveLine(2);
-    setActiveNode(nextId);
-    setTraversal(null);
-
-    setStack((old) => push(old, n, nextId));
-    setNextId((old) => old + 1);
-
-    recordHistory(`Pushed ${n} onto the stack.`);
+    updateStack(after);
+    setActiveNode(id);
+    nextIdRef.current = id + 1;
+    setNextId(id + 1);
+    recordHistory(`Pushed ${n} onto the stack.`, {
+      op: "push",
+      before,
+      after,
+      activeId: id,
+      traversal: null,
+      line: 2,
+    });
   }
 
   function handlePop() {
+    abortReplay();
+    const before = stackRef.current;
     setOperation("pop");
     setTraversal(null);
-
-    if (stack.length === 0) {
+    if (before.length === 0) {
       setActiveNode(null);
       setActiveLine(2);
       setMessage("Cannot pop from an empty stack.");
       return;
     }
-
-    const removed = stack[stack.length - 1];
-
-    setActiveNode(removed.id);
+    const removed = before[before.length - 1];
+    const after = pop(before);
     setActiveLine(4);
-    setStack((old) => pop(old));
-
-    recordHistory(`Popped ${removed.value} from the top.`);
+    updateStack(after);
+    recordHistory(`Popped ${removed.value} from the top.`, {
+      op: "pop",
+      before,
+      after,
+      activeId: removed.id,
+      traversal: null,
+      line: 4,
+    });
   }
 
   function handlePeek() {
+    abortReplay();
+    const s = stackRef.current;
     setOperation("peek");
     setTraversal(null);
-
-    if (stack.length === 0) {
+    if (s.length === 0) {
       setActiveNode(null);
       setActiveLine(2);
       setMessage("The stack is empty.");
       return;
     }
-
-    const topValue = peekStack(stack);
-
-    setActiveNode(stack[stack.length - 1].id);
+    const topValue = peekStack(s);
+    const topId = s[s.length - 1].id;
+    setActiveNode(topId);
     setActiveLine(3);
-
-    recordHistory(
-      `Top element: ${topValue}. The stack remains unchanged.`
-    );
+    recordHistory(`Top element: ${topValue}. The stack remains unchanged.`, {
+      op: "peek",
+      before: s,
+      after: s,
+      activeId: topId,
+      traversal: null,
+      line: 3,
+    });
   }
 
   function handleSearch() {
     const n = readNumber();
     if (n === null) return;
-
+    abortReplay();
+    const s = stackRef.current;
     setOperation("search");
     setTraversal(null);
-
-    const index = searchStack(stack, n);
-
-    setActiveLine(index === -1 ? 4 : 3);
-    setActiveNode(index === -1 ? null : stack[index].id);
-
-    if (index === -1) {
-      recordHistory(`Value ${n} was not found in the stack.`);
-    } else {
-      const positionFromTop = stack.length - 1 - index;
-
-      recordHistory(
-        `Found ${n} at array index ${index}, position ${positionFromTop} from the top.`
-      );
-    }
+    const index = searchStack(s, n);
+    const line = index === -1 ? 4 : 3;
+    const activeId = index === -1 ? null : s[index].id;
+    setActiveLine(line);
+    setActiveNode(activeId);
+    const text =
+      index === -1
+        ? `Value ${n} was not found in the stack.`
+        : `Found ${n} at array index ${index}, position ${
+            s.length - 1 - index
+          } from the top.`;
+    recordHistory(text, {
+      op: "search",
+      before: s,
+      after: s,
+      activeId,
+      traversal: null,
+      line,
+    });
   }
 
   function handleTraverse() {
+    abortReplay();
+    const s = stackRef.current;
     setOperation("traverse");
     setActiveLine(2);
     setActiveNode(null);
-
-    const values = stack
+    const values = s
       .slice()
       .reverse()
       .map((node) => node.value);
-
     setTraversal(values);
-
-    recordHistory(
-      `Traversed ${stack.length} element(s), from top to bottom.`
-    );
+    recordHistory(`Traversed ${s.length} element(s), from top to bottom.`, {
+      op: "traverse",
+      before: s,
+      after: s,
+      activeId: null,
+      traversal: values,
+      line: 2,
+    });
   }
 
   function handleClear() {
+    abortReplay();
+    const before = stackRef.current;
+    const after = clearStack();
     setOperation("clear");
     setActiveLine(1);
-    setActiveNode(null);
     setTraversal(null);
-    setStack(clearStack());
-
-    recordHistory("Cleared the stack.");
+    updateStack(after);
+    recordHistory("Cleared the stack.", {
+      op: "clear",
+      before,
+      after,
+      activeId: null,
+      traversal: null,
+      line: 1,
+    });
   }
 
   function handleGenerate() {
     const count = Number(randomCount);
     const min = Number(randomMin);
     const max = Number(randomMax);
-
     if (
       !Number.isInteger(count) ||
       count < 1 ||
@@ -349,49 +586,66 @@ export function StackVisualizer() {
       );
       return;
     }
-
+    abortReplay();
+    const before = stackRef.current;
     let generatedStack: StackNode[] = [];
-    let id = nextId;
-
+    let id = nextIdRef.current;
     for (let i = 0; i < count; i++) {
-      const randomValue =
-        Math.floor(Math.random() * (max - min + 1)) + min;
-
+      const randomValue = Math.floor(Math.random() * (max - min + 1)) + min;
       generatedStack = push(generatedStack, randomValue, id);
       id++;
     }
-
-    setStack(generatedStack);
+    updateStack(generatedStack);
+    nextIdRef.current = id;
     setNextId(id);
     setOperation("traverse");
     setActiveNode(null);
     setActiveLine(null);
-
     const values = generatedStack
       .slice()
       .reverse()
       .map((node) => node.value);
-
     setTraversal(values);
-
-    recordHistory(`Generated a stack with ${count} elements.`);
+    recordHistory(`Generated a stack with ${count} elements.`, {
+      op: "traverse",
+      before,
+      after: generatedStack,
+      activeId: null,
+      traversal: values,
+      line: 2,
+    });
   }
 
   function handleZoomIn() {
-    setZoom((current) =>
-      Math.min(1.8, Math.round((current + 0.1) * 10) / 10)
-    );
+    setZoom((current) => Math.min(1.8, Math.round((current + 0.1) * 10) / 10));
   }
 
   function handleZoomOut() {
-    setZoom((current) =>
-      Math.max(0.5, Math.round((current - 0.1) * 10) / 10)
-    );
+    setZoom((current) => Math.max(0.5, Math.round((current - 0.1) * 10) / 10));
   }
 
   return (
-    /* FIX 1: no h-screen / overflow-hidden — the page scrolls naturally */
     <main className="flex min-h-screen flex-col bg-background text-foreground">
+      <style>{`
+        @keyframes node-drop {
+          0%   { opacity: 0; transform: translateY(-90px) scale(0.9); }
+          60%  { opacity: 1; transform: translateY(6px) scale(1.03); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes node-glow {
+          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
+        }
+        @keyframes badge-pop {
+          0%   { transform: scale(0); }
+          60%  { transform: scale(1.25); }
+          100% { transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .anim-new { animation: none !important; }
+        }
+      `}</style>
+
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
@@ -402,17 +656,14 @@ export function StackVisualizer() {
             Explore LIFO operations through an interactive stack.
           </p>
         </div>
-
         <Badge className="border-red-200 bg-red-50 text-red-700 hover:bg-red-50">
           LIFO · Stack
         </Badge>
       </header>
 
-      {/* MAIN LAYOUT
-          FIX 2: no min-h-0 / flex-1; items-start so columns don't stretch */}
+      {/* MAIN LAYOUT */}
       <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        {/* LEFT SIDEBAR
-            FIX 3: sticky with a max height instead of a full-height scroller */}
+        {/* LEFT SIDEBAR */}
         <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           {/* OPERATIONS */}
           <Card>
@@ -422,13 +673,11 @@ export function StackVisualizer() {
                 Modify your stack
               </CardDescription>
             </CardHeader>
-
             <CardContent className="space-y-2 p-3 pt-1">
               <div className="space-y-1">
                 <label htmlFor="stack-value" className="text-xs font-medium">
                   Element value
                 </label>
-
                 <Input
                   id="stack-value"
                   type="number"
@@ -441,14 +690,12 @@ export function StackVisualizer() {
                   className="h-8 text-sm"
                 />
               </div>
-
               <Button
                 onClick={handlePush}
                 className={`h-8 w-full text-xs ${primaryButton}`}
               >
                 + Push
               </Button>
-
               <Button
                 onClick={handlePop}
                 variant="outline"
@@ -456,7 +703,6 @@ export function StackVisualizer() {
               >
                 − Pop
               </Button>
-
               <Button
                 onClick={handlePeek}
                 variant="outline"
@@ -464,7 +710,6 @@ export function StackVisualizer() {
               >
                 Peek Top
               </Button>
-
               <Button
                 onClick={handleSearch}
                 variant="outline"
@@ -472,7 +717,6 @@ export function StackVisualizer() {
               >
                 Search Value
               </Button>
-
               <Button
                 onClick={handleTraverse}
                 variant="outline"
@@ -480,7 +724,6 @@ export function StackVisualizer() {
               >
                 Traverse Stack
               </Button>
-
               <Button
                 onClick={handleClear}
                 variant="outline"
@@ -499,7 +742,6 @@ export function StackVisualizer() {
                 Generate sample elements
               </CardDescription>
             </CardHeader>
-
             <CardContent className="space-y-2 p-3 pt-1">
               <div className="space-y-1">
                 <label className="text-xs font-medium">Node count</label>
@@ -512,7 +754,6 @@ export function StackVisualizer() {
                   className="h-8 text-sm"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Minimum</label>
@@ -523,7 +764,6 @@ export function StackVisualizer() {
                     className="h-8 text-sm"
                   />
                 </div>
-
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Maximum</label>
                   <Input
@@ -534,7 +774,6 @@ export function StackVisualizer() {
                   />
                 </div>
               </div>
-
               <Button
                 onClick={handleGenerate}
                 variant="outline"
@@ -548,31 +787,41 @@ export function StackVisualizer() {
           {/* HISTORY */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between p-3 pb-2">
-              <CardTitle className="text-sm">History</CardTitle>
-
+              <div>
+                <CardTitle className="text-sm">History</CardTitle>
+                <CardDescription className="text-xs">
+                  Press Play to replay
+                </CardDescription>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setHistory([])}
+                onClick={() => {
+                  abortReplay();
+                  setHistory([]);
+                }}
                 className="h-6 px-2 text-xs text-muted-foreground"
               >
                 Clear
               </Button>
             </CardHeader>
-
             <CardContent className="p-3 pt-1">
               {history.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   Operations will appear here.
                 </p>
               ) : (
-                <div className="space-y-2">
-                  {history.map((item, index) => (
+                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                  {history.map((item) => (
                     <div
-                      key={`${item}-${index}`}
-                      className="border-l-2 border-red-200 pl-2 text-xs text-muted-foreground"
+                      key={item.id}
+                      className={`border-l-2 pl-2 text-xs transition-colors ${
+                        replayEntryId === item.id
+                          ? "border-red-600 bg-red-50 font-medium text-red-800"
+                          : "border-red-200 text-muted-foreground"
+                      }`}
                     >
-                      {item}
+                      {item.text}
                     </div>
                   ))}
                 </div>
@@ -588,11 +837,9 @@ export function StackVisualizer() {
           </Alert>
         </aside>
 
-        {/* RIGHT CONTENT
-            FIX 4: simple vertical flow, no grid-rows-2 height splitting */}
+        {/* RIGHT CONTENT */}
         <section className="flex min-w-0 flex-col gap-3">
-          {/* VISUALIZATION PLAYGROUND
-              FIX 5: card sizes to its content */}
+          {/* VISUALIZATION PLAYGROUND */}
           <Card className="min-w-0 overflow-hidden">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
               <div>
@@ -603,7 +850,6 @@ export function StackVisualizer() {
                   Watch elements move in and out of the stack.
                 </CardDescription>
               </div>
-
               <div className="flex items-center gap-1">
                 <Button
                   variant="outline"
@@ -615,11 +861,9 @@ export function StackVisualizer() {
                 >
                   −
                 </Button>
-
                 <span className="min-w-12 text-center text-xs text-muted-foreground">
                   {Math.round(zoom * 100)}%
                 </span>
-
                 <Button
                   variant="outline"
                   size="sm"
@@ -630,7 +874,6 @@ export function StackVisualizer() {
                 >
                   +
                 </Button>
-
                 <Button
                   variant="outline"
                   size="sm"
@@ -643,6 +886,68 @@ export function StackVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* PLAYBACK CONTROLS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" /> Play
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="gap-2"
+                  >
+                    <Pause className="h-4 w-4" /> Pause
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Undo2 className="h-4 w-4" /> Undo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Redo2 className="h-4 w-4" /> Redo
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <label htmlFor="animation-speed" className="text-sm">
+                    Speed
+                  </label>
+                  <select
+                    id="animation-speed"
+                    value={animationSpeed}
+                    onChange={(event) => setAnimationSpeed(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+
               {/* STATISTICS */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg border bg-muted/20 p-2">
@@ -650,19 +955,15 @@ export function StackVisualizer() {
                     Top
                   </p>
                   <p className="truncate text-lg font-semibold">
-                    {stack.length > 0
-                      ? stack[stack.length - 1].value
-                      : "—"}
+                    {stack.length > 0 ? stack[stack.length - 1].value : "—"}
                   </p>
                 </div>
-
                 <div className="rounded-lg border bg-muted/20 p-2">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
                     Stack Size
                   </p>
                   <p className="text-lg font-semibold">{stack.length}</p>
                 </div>
-
                 <div className="rounded-lg border bg-muted/20 p-2">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
                     Bottom
@@ -673,9 +974,7 @@ export function StackVisualizer() {
                 </div>
               </div>
 
-              {/* STACK DIAGRAM
-                  FIX 6: fixed-height scroll area; m-auto on the child so
-                  tall stacks scroll instead of being clipped at the top */}
+              {/* STACK DIAGRAM */}
               <div className="flex flex-col overflow-hidden rounded-lg border bg-muted/10">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-xs font-medium">Stack Structure</span>
@@ -683,7 +982,6 @@ export function StackVisualizer() {
                     LIFO
                   </Badge>
                 </div>
-
                 <div className="flex h-[360px] overflow-auto p-4">
                   {stack.length === 0 ? (
                     <div className="m-auto text-center">
@@ -703,9 +1001,7 @@ export function StackVisualizer() {
                       <Badge className="mb-2 bg-red-600 text-white hover:bg-red-600">
                         TOP
                       </Badge>
-
                       <div className="mb-1 text-xl text-red-600">↓</div>
-
                       {stack
                         .slice()
                         .reverse()
@@ -714,15 +1010,25 @@ export function StackVisualizer() {
                           const isTop = index === 0;
                           const isBottom = originalIndex === 0;
                           const isActive = activeNode === node.id;
-
+                          const isNew = newIds.includes(node.id);
+                          const newOrder = newIds.indexOf(node.id);
                           return (
                             <div
                               key={node.id}
-                              className={`relative flex h-14 min-w-36 shrink-0 items-center justify-between gap-5 border-2 px-4 transition-all ${
+                              style={
+                                isNew
+                                  ? {
+                                      animation: `node-drop 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                                        newOrder * 120
+                                      }ms both, node-glow 1200ms ease-out ${
+                                        600 + newOrder * 120
+                                      }ms`,
+                                    }
+                                  : undefined
+                              }
+                              className={`anim-new relative flex h-14 min-w-36 shrink-0 items-center justify-between gap-5 border-2 px-4 transition-colors ${
                                 isTop ? "rounded-t-xl" : ""
-                              } ${
-                                isBottom ? "rounded-b-xl" : ""
-                              } ${
+                              } ${isBottom ? "rounded-b-xl" : ""} ${
                                 isActive
                                   ? "z-10 border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
                                   : isTop
@@ -733,11 +1039,19 @@ export function StackVisualizer() {
                               <span className="text-[10px] text-muted-foreground">
                                 #{originalIndex}
                               </span>
-
                               <span className="text-lg font-bold">
                                 {node.value}
                               </span>
-
+                              {isNew && (
+                                <span
+                                  className="absolute -left-2 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                  style={{
+                                    animation: "badge-pop 400ms ease-out both",
+                                  }}
+                                >
+                                  NEW
+                                </span>
+                              )}
                               {isActive && (
                                 <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
                                   ACTIVE
@@ -746,11 +1060,7 @@ export function StackVisualizer() {
                             </div>
                           );
                         })}
-
-                      <div className="mt-1 text-xl text-muted-foreground">
-                        ↓
-                      </div>
-
+                      <div className="mt-1 text-xl text-muted-foreground">↓</div>
                       <Badge variant="outline" className="mt-2">
                         BOTTOM
                       </Badge>
@@ -767,7 +1077,6 @@ export function StackVisualizer() {
                     Bottom → Top
                   </span>
                 </div>
-
                 <div className="flex flex-wrap items-center gap-2">
                   {stack.length === 0 ? (
                     <span className="text-xs text-muted-foreground">[]</span>
@@ -775,7 +1084,15 @@ export function StackVisualizer() {
                     stack.map((node) => (
                       <div
                         key={node.id}
-                        className={`rounded-md border px-3 py-1.5 font-mono text-xs ${
+                        style={
+                          newIds.includes(node.id)
+                            ? {
+                                animation:
+                                  "node-drop 500ms ease-out both, node-glow 1000ms ease-out 500ms",
+                              }
+                            : undefined
+                        }
+                        className={`anim-new rounded-md border px-3 py-1.5 font-mono text-xs ${
                           activeNode === node.id
                             ? "border-red-400 bg-red-50 font-semibold text-red-700"
                             : "bg-muted/20"
@@ -794,12 +1111,10 @@ export function StackVisualizer() {
                   <span className="text-xs font-semibold">
                     Traversal / Operation Output
                   </span>
-
                   <Badge variant="outline" className="text-[10px]">
                     {selectedCode.complexity}
                   </Badge>
                 </div>
-
                 {traversal !== null ? (
                   <div className="flex flex-wrap items-center gap-2">
                     {traversal.length > 0 ? (
@@ -811,7 +1126,6 @@ export function StackVisualizer() {
                           <span className="rounded-md bg-red-100 px-2 py-1 font-mono text-xs font-medium text-red-800">
                             {item}
                           </span>
-
                           {index < traversal.length - 1 && (
                             <span className="text-xs text-muted-foreground">
                               →
@@ -832,8 +1146,7 @@ export function StackVisualizer() {
             </CardContent>
           </Card>
 
-          {/* BOTTOM ROW: PSEUDOCODE + COMPLEXITY
-              FIX 8: no fixed min height; inner areas scroll with max-h */}
+          {/* BOTTOM ROW: PSEUDOCODE + COMPLEXITY */}
           <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
             {/* PSEUDOCODE */}
             <Card className="flex min-w-0 flex-col overflow-hidden">
@@ -844,12 +1157,10 @@ export function StackVisualizer() {
                     {selectedCode.title}
                   </Badge>
                 </div>
-
                 <CardDescription className="text-xs">
                   Follow the selected operation step by step.
                 </CardDescription>
               </CardHeader>
-
               <CardContent className="flex flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
                 <div className="max-h-[260px] overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
                   {selectedCode.lines.map((line, index) => (
@@ -864,7 +1175,6 @@ export function StackVisualizer() {
                       <span className="w-5 shrink-0 select-none text-right text-slate-500">
                         {index + 1}
                       </span>
-
                       <span
                         className={
                           line.trim().startsWith("//")
@@ -877,10 +1187,8 @@ export function StackVisualizer() {
                     </div>
                   ))}
                 </div>
-
                 <div className="rounded-lg border bg-muted/20 p-3">
                   <p className="mb-2 text-xs font-semibold">How it works</p>
-
                   <ol className="list-decimal space-y-1 pl-4">
                     {selectedCode.explanation.map((step, index) => (
                       <li
@@ -903,38 +1211,30 @@ export function StackVisualizer() {
                   Performance of stack operations
                 </CardDescription>
               </CardHeader>
-
               <CardContent className="flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
                 <div className="space-y-2">
                   {complexityRows.map((item) => {
                     const isActive = item.key === operation;
-
                     return (
                       <div
                         key={item.operation}
                         className={`rounded-lg border p-3 transition-colors ${
-                          isActive
-                            ? "border-red-300 bg-red-50/70"
-                            : "bg-card"
+                          isActive ? "border-red-300 bg-red-50/70" : "bg-card"
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-xs font-semibold">
                             {item.operation}
                           </p>
-
                           <Badge
                             variant="outline"
                             className={`font-mono text-[10px] ${
-                              isActive
-                                ? "border-red-300 text-red-700"
-                                : ""
+                              isActive ? "border-red-300 text-red-700" : ""
                             }`}
                           >
                             {item.time}
                           </Badge>
                         </div>
-
                         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                           {item.why}
                         </p>
@@ -942,13 +1242,12 @@ export function StackVisualizer() {
                     );
                   })}
                 </div>
-
                 <div className="mt-3 rounded-lg border bg-muted/20 p-3">
                   <p className="text-xs font-semibold">Space Complexity</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    A stack containing n elements requires O(n) space.
-                    Push and pop take O(1) additional space per operation,
-                    excluding the node being added or removed.
+                    A stack containing n elements requires O(n) space. Push and
+                    pop take O(1) additional space per operation, excluding the
+                    node being added or removed.
                   </p>
                 </div>
               </CardContent>
