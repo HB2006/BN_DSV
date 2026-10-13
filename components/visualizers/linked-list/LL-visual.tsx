@@ -1,7 +1,7 @@
-
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import type { ListNode } from "./type";
 import {
   insertHead,
@@ -32,12 +32,29 @@ type Operation =
   | "traverse"
   | "clear";
 
+type NodeKey = string | number;
+
 type CodeInfo = {
   title: string;
   lines: string[];
   explanation: string[];
   complexity: string;
 };
+
+type HistoryEntry = {
+  id: number;
+  text: string;
+  op: Operation;
+  before: ListNode[];
+  after: ListNode[];
+  activeId: NodeKey | null;
+  traversal: number[] | null;
+  line: number | null;
+};
+
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
+
+type Step = { line: number | null; run: () => void };
 
 const pseudocode: Record<Operation, CodeInfo> = {
   "insert-head": {
@@ -171,11 +188,7 @@ const pseudocode: Record<Operation, CodeInfo> = {
 
   clear: {
     title: "Clear Linked List",
-    lines: [
-      "head = null",
-      "size = 0",
-      "return",
-    ],
+    lines: ["head = null", "size = 0", "return"],
     explanation: [
       "Set the head pointer to null.",
       "Reset the list size to zero.",
@@ -232,6 +245,7 @@ const secondaryButton =
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
 const ZOOM_STEP = 0.1;
+const MAX_HISTORY = 50;
 
 export function LinkedListVisualizer() {
   const [list, setList] = useState<ListNode[]>([
@@ -239,42 +253,268 @@ export function LinkedListVisualizer() {
     { id: 2, value: 20 },
     { id: 3, value: 30 },
   ]);
-
   const [value, setValue] = useState("40");
   const [position, setPosition] = useState("1");
   const [nextId, setNextId] = useState(4);
-  const [activeNode, setActiveNode] = useState<number | null>(null);
+  const [activeNode, setActiveNode] = useState<NodeKey | null>(null);
   const [operation, setOperation] = useState<Operation>("insert-head");
   const [activeLine, setActiveLine] = useState<number | null>(null);
-  const [message, setMessage] = useState(
-    "Choose an operation to get started."
-  );
-  const [history, setHistory] = useState<string[]>([]);
+  const [message, setMessage] = useState("Choose an operation to get started.");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[] | null>(null);
   const [randomCount, setRandomCount] = useState("5");
   const [minValue, setMinValue] = useState("1");
   const [maxValue, setMaxValue] = useState("100");
   const [zoom, setZoom] = useState(1);
 
+  // Playback + undo/redo state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState("1");
+  const [undoStack, setUndoStack] = useState<ListNode[][]>([]);
+  const [redoStack, setRedoStack] = useState<ListNode[][]>([]);
   const selectedCode = pseudocode[operation];
 
+  // Latest-value refs so timer callbacks never see stale state
+  const listRef = useRef(list);
+  listRef.current = list;
+  const nextIdRef = useRef(nextId);
+  nextIdRef.current = nextId;
+  const speedRef = useRef(animationSpeed);
+  speedRef.current = animationSpeed;
+
+  // Replay machinery
+  const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const framesRef = useRef<Step[] | null>(null);
+  const frameIndexRef = useRef(0);
+  const replayOriginalRef = useRef<ListNode[] | null>(null);
+  const historyIdRef = useRef(1);
+
+  // New-node animation tracking
+  const [newIds, setNewIds] = useState<NodeKey[]>([]);
+  const prevIdsRef = useRef<Set<NodeKey>>(new Set(list.map((n) => n.id)));
+
+  // Detect any node that appeared (insert, redo, undo of delete, generate, replay)
+  useEffect(() => {
+    const prev = prevIdsRef.current;
+    const ids = list.map((n) => n.id as NodeKey);
+    const added = ids.filter((id) => !prev.has(id));
+    prevIdsRef.current = new Set(ids);
+
+    if (added.length === 0) {
+      setNewIds([]);
+      return;
+    }
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds([]), 1600);
+    return () => clearTimeout(t);
+  }, [list]);
+
+  // Clear playback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimer.current !== null) {
+        clearTimeout(playbackTimer.current);
+      }
+    };
+  }, []);
+
   function zoomIn() {
-    setZoom((z) =>
-      Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10)
-    );
+    setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10));
   }
 
   function zoomOut() {
-    setZoom((z) =>
-      Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10)
-    );
+    setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10));
   }
 
-  function record(text: string) {
-    setHistory((old) => [text, ...old].slice(0, 8));
+  function record(text: string, meta?: HistoryMeta) {
+    if (meta) {
+      const entry: HistoryEntry = {
+        id: historyIdRef.current++,
+        text,
+        ...meta,
+      };
+      setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
+    }
     setMessage(text);
+  }
+
+  function updateList(nextList: ListNode[]) {
+    const current = listRef.current;
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack([]);
+    listRef.current = nextList;
+    setList(nextList);
+    setActiveNode(null);
     setTraversal(null);
   }
+
+  /* ---------- HISTORY REPLAY ---------- */
+
+  // Stops any replay and puts the real list back
+  function abortReplay() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+    if (replayOriginalRef.current) {
+      const original = replayOriginalRef.current;
+      replayOriginalRef.current = null;
+      listRef.current = original;
+      setList(original);
+    }
+    framesRef.current = null;
+    frameIndexRef.current = 0;
+    setReplayEntryId(null);
+    setActiveNode(null);
+    setActiveLine(null);
+  }
+
+  function runFrames() {
+    const tick = () => {
+      const frames = framesRef.current;
+      if (!frames) return;
+      const i = frameIndexRef.current;
+      if (i >= frames.length) {
+        playbackTimer.current = null;
+        framesRef.current = null;
+        frameIndexRef.current = 0;
+        setIsPlaying(false);
+        return;
+      }
+      frameIndexRef.current = i + 1;
+      setActiveLine(frames[i].line);
+      frames[i].run();
+      playbackTimer.current = setTimeout(
+        tick,
+        1000 / Number(speedRef.current)
+      );
+    };
+    tick();
+  }
+
+  function handlePause() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+  }
+
+  function handlePlay() {
+    if (isPlaying) return;
+
+    // Resume a paused replay
+    if (
+      framesRef.current &&
+      frameIndexRef.current < framesRef.current.length
+    ) {
+      setIsPlaying(true);
+      runFrames();
+      return;
+    }
+
+    if (history.length === 0) {
+      setMessage(
+        "No history to replay yet. Run a few operations, then press Play."
+      );
+      return;
+    }
+
+    const entries = history.slice().reverse(); // oldest first
+    const original = listRef.current;
+    replayOriginalRef.current = original;
+
+    const frames: Step[] = [];
+
+    // 1. Rewind to the state before the first recorded operation
+    frames.push({
+      line: null,
+      run: () => {
+        const start = entries[0].before;
+        listRef.current = start;
+        setList(start);
+        setActiveNode(null);
+        setTraversal(null);
+        setReplayEntryId(null);
+        setMessage("Replay started from the initial state.");
+      },
+    });
+
+    // 2. Two frames per recorded operation: announce, then apply
+    entries.forEach((entry) => {
+      const title = pseudocode[entry.op].title;
+      frames.push({
+        line: 0,
+        run: () => {
+          setOperation(entry.op);
+          setReplayEntryId(entry.id);
+          setTraversal(null);
+          setActiveNode(entry.op === "delete-value" ? entry.activeId : null);
+          setMessage(`Replaying: ${title}`);
+        },
+      });
+      frames.push({
+        line: entry.line,
+        run: () => {
+          listRef.current = entry.after;
+          setList(entry.after);
+          setActiveNode(entry.op === "delete-value" ? null : entry.activeId);
+          setTraversal(entry.traversal);
+          setMessage(entry.text);
+        },
+      });
+    });
+
+    // 3. Put the real list back (matters if you used Undo/Redo earlier)
+    frames.push({
+      line: null,
+      run: () => {
+        listRef.current = original;
+        setList(original);
+        replayOriginalRef.current = null;
+        setReplayEntryId(null);
+        setActiveNode(null);
+        setMessage("Replay finished.");
+      },
+    });
+
+    framesRef.current = frames;
+    frameIndexRef.current = 0;
+    setIsPlaying(true);
+    runFrames();
+  }
+
+  /* ---------- UNDO / REDO ---------- */
+
+  function handleUndo() {
+    abortReplay();
+    if (undoStack.length === 0) return;
+    const current = listRef.current;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((old) => [...old, [...current]]);
+    setUndoStack((old) => old.slice(0, -1));
+    listRef.current = [...previous];
+    setList([...previous]);
+    setTraversal(null);
+    setMessage("Undo successful.");
+  }
+
+  function handleRedo() {
+    abortReplay();
+    if (redoStack.length === 0) return;
+    const current = listRef.current;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack((old) => old.slice(0, -1));
+    listRef.current = [...next];
+    setList([...next]);
+    setTraversal(null);
+    setMessage("Redo successful.");
+  }
+
+  /* ---------- OPERATIONS ---------- */
 
   function readNumber(): number | null {
     if (value.trim() === "" || !Number.isFinite(Number(value))) {
@@ -289,26 +529,52 @@ export function LinkedListVisualizer() {
     const n = readNumber();
     if (n === null) return;
 
+    abortReplay();
+    const before = listRef.current;
+    const id = nextIdRef.current;
+    const after = insertHead(before, n, id);
+
     setOperation("insert-head");
     setActiveLine(2);
-    setActiveNode(nextId);
-    setList((old) => insertHead(old, n, nextId));
-    setNextId((old) => old + 1);
+    updateList(after);
+    setActiveNode(id);
+    nextIdRef.current = id + 1;
+    setNextId(id + 1);
 
-    record(`Inserted ${n} at the head.`);
+    record(`Inserted ${n} at the head.`, {
+      op: "insert-head",
+      before,
+      after,
+      activeId: id,
+      traversal: null,
+      line: 2,
+    });
   }
 
   function insertAtTail() {
     const n = readNumber();
     if (n === null) return;
 
+    abortReplay();
+    const before = listRef.current;
+    const id = nextIdRef.current;
+    const after = insertTail(before, n, id);
+
     setOperation("insert-tail");
     setActiveLine(7);
-    setActiveNode(nextId);
-    setList((old) => insertTail(old, n, nextId));
-    setNextId((old) => old + 1);
+    updateList(after);
+    setActiveNode(id);
+    nextIdRef.current = id + 1;
+    setNextId(id + 1);
 
-    record(`Inserted ${n} at the tail.`);
+    record(`Inserted ${n} at the tail.`, {
+      op: "insert-tail",
+      before,
+      after,
+      activeId: id,
+      traversal: null,
+      line: 7,
+    });
   }
 
   function insertAtIndex() {
@@ -316,29 +582,41 @@ export function LinkedListVisualizer() {
     if (n === null) return;
 
     const index = Number(position);
+    const before = listRef.current;
 
     if (
       position.trim() === "" ||
       !Number.isInteger(index) ||
       index < 0 ||
-      index > list.length
+      index > before.length
     ) {
-      setMessage(`Enter an integer index from 0 to ${list.length}.`);
+      setMessage(`Enter an integer index from 0 to ${before.length}.`);
       return;
     }
 
     try {
-      setOperation("insert-position");
-      setActiveLine(index === 0 ? 3 : 9);
-      setActiveNode(nextId);
-      setList((old) => insertAtPosition(old, n, index, nextId));
-      setNextId((old) => old + 1);
+      abortReplay();
+      const id = nextIdRef.current;
+      const after = insertAtPosition(before, n, index, id);
+      const line = index === 0 ? 3 : 9;
 
-      record(`Inserted ${n} at index ${index}.`);
+      setOperation("insert-position");
+      setActiveLine(line);
+      updateList(after);
+      setActiveNode(id);
+      nextIdRef.current = id + 1;
+      setNextId(id + 1);
+
+      record(`Inserted ${n} at index ${index}.`, {
+        op: "insert-position",
+        before,
+        after,
+        activeId: id,
+        traversal: null,
+        line,
+      });
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "Insertion failed."
-      );
+      setMessage(error instanceof Error ? error.message : "Insertion failed.");
     }
   }
 
@@ -346,9 +624,12 @@ export function LinkedListVisualizer() {
     const n = readNumber();
     if (n === null) return;
 
-    const match = list.find((node) => node.value === n);
+    abortReplay();
+    const before = listRef.current;
+    const match = before.find((node) => node.value === n);
 
     setOperation("delete-value");
+    setTraversal(null);
 
     if (!match) {
       setActiveNode(null);
@@ -357,53 +638,96 @@ export function LinkedListVisualizer() {
       return;
     }
 
-    setActiveNode(match.id);
-    setActiveLine(7);
-    setList((old) => deleteValue(old, n));
+    const after = deleteValue(before, n);
 
-    record(`Deleted the first occurrence of ${n}.`);
+    setActiveLine(7);
+    updateList(after);
+
+    record(`Deleted the first occurrence of ${n}.`, {
+      op: "delete-value",
+      before,
+      after,
+      activeId: match.id,
+      traversal: null,
+      line: 7,
+    });
   }
 
   function search() {
     const n = readNumber();
     if (n === null) return;
 
+    abortReplay();
+    const before = listRef.current;
+
     setOperation("search");
-
-    const index = searchValue(list, n);
-
-    setActiveLine(index === -1 ? 7 : 4);
-    setActiveNode(index === -1 ? null : list[index].id);
     setTraversal(null);
 
-    setMessage(
+    const index = searchValue(before, n);
+    const line = index === -1 ? 7 : 4;
+    const activeId = index === -1 ? null : before[index].id;
+
+    setActiveLine(line);
+    setActiveNode(activeId);
+
+    record(
       index === -1
         ? `Value ${n} was not found.`
-        : `Found ${n} at index ${index}.`
+        : `Found ${n} at index ${index}.`,
+      {
+        op: "search",
+        before,
+        after: before,
+        activeId,
+        traversal: null,
+        line,
+      }
     );
   }
 
   function traverse() {
+    abortReplay();
+    const before = listRef.current;
+
     setOperation("traverse");
     setActiveLine(2);
     setActiveNode(null);
 
-    setTraversal(list.map((node) => node.value));
-    setMessage(
-      list.length
-        ? `Traversed ${list.length} node(s).`
-        : "The list is empty."
+    const values = before.map((node) => node.value);
+    setTraversal(values);
+
+    record(
+      before.length
+        ? `Traversed ${before.length} node(s).`
+        : "The list is empty.",
+      {
+        op: "traverse",
+        before,
+        after: before,
+        activeId: null,
+        traversal: values,
+        line: 2,
+      }
     );
   }
 
   function clearList() {
+    abortReplay();
+    const before = listRef.current;
+    const after: ListNode[] = [];
+
     setOperation("clear");
     setActiveLine(0);
-    setActiveNode(null);
-    setList([]);
-    setTraversal(null);
+    updateList(after);
 
-    record("Cleared the linked list.");
+    record("Cleared the linked list.", {
+      op: "clear",
+      before,
+      after,
+      activeId: null,
+      traversal: null,
+      line: 0,
+    });
   }
 
   function generateRandom() {
@@ -419,32 +743,60 @@ export function LinkedListVisualizer() {
       !Number.isInteger(max) ||
       min > max
     ) {
-      setMessage(
-        "Use 1–30 nodes and valid integer minimum/maximum values."
-      );
+      setMessage("Use 1–30 nodes and valid integer minimum/maximum values.");
       return;
     }
+
+    abortReplay();
+    const before = listRef.current;
+    const startId = nextIdRef.current;
 
     const generated: ListNode[] = Array.from(
       { length: count },
       (_, index) => ({
-        id: nextId + index,
+        id: startId + index,
         value: Math.floor(Math.random() * (max - min + 1)) + min,
       })
     );
 
-    setList(generated);
-    setNextId((old) => old + count);
+    updateList(generated);
+    nextIdRef.current = startId + count;
+    setNextId(startId + count);
     setOperation("traverse");
     setActiveLine(null);
-    setActiveNode(null);
-    setTraversal(null);
 
-    record(`Generated a linked list with ${count} random nodes.`);
+    record(`Generated a linked list with ${count} random nodes.`, {
+      op: "traverse",
+      before,
+      after: generated,
+      activeId: null,
+      traversal: null,
+      line: null,
+    });
   }
 
   return (
     <main className="flex min-h-screen flex-col bg-background text-foreground">
+      <style>{`
+        @keyframes node-enter {
+          0%   { opacity: 0; transform: translateX(70px) scale(0.9); }
+          60%  { opacity: 1; transform: translateX(-6px) scale(1.03); }
+          100% { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes node-glow {
+          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
+        }
+        @keyframes badge-pop {
+          0%   { transform: scale(0); }
+          60%  { transform: scale(1.25); }
+          100% { transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .anim-new { animation: none !important; }
+        }
+      `}</style>
+
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -624,11 +976,19 @@ export function LinkedListVisualizer() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
-              <CardTitle className="text-sm">History</CardTitle>
+              <div>
+                <CardTitle className="text-sm">History</CardTitle>
+                <CardDescription className="text-[11px]">
+                  Press Play to replay
+                </CardDescription>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setHistory([])}
+                onClick={() => {
+                  abortReplay();
+                  setHistory([]);
+                }}
                 className="h-6 px-2 text-[11px] text-muted-foreground"
               >
                 Clear
@@ -641,14 +1001,18 @@ export function LinkedListVisualizer() {
                   Recent operations appear here.
                 </p>
               ) : (
-                <ul className="space-y-1.5">
-                  {history.map((item, index) => (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {history.map((item) => (
                     <li
-                      key={`${item}-${index}`}
-                      className="flex gap-1.5 text-[11px] leading-snug"
+                      key={item.id}
+                      className={`flex gap-1.5 rounded px-1 text-[11px] leading-snug transition-colors ${
+                        replayEntryId === item.id
+                          ? "bg-red-50 font-medium text-red-800 dark:bg-red-950/40 dark:text-red-200"
+                          : ""
+                      }`}
                     >
                       <span className="font-bold text-red-600">↳</span>
-                      <span className="min-w-0 break-words">{item}</span>
+                      <span className="min-w-0 break-words">{item.text}</span>
                     </li>
                   ))}
                 </ul>
@@ -713,6 +1077,69 @@ export function LinkedListVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* PLAYBACK CONTROLS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" /> Play
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="gap-2"
+                  >
+                    <Pause className="h-4 w-4" /> Pause
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Undo2 className="h-4 w-4" /> Undo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Redo2 className="h-4 w-4" /> Redo
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <label htmlFor="animation-speed" className="text-sm">
+                    Speed
+                  </label>
+                  <select
+                    id="animation-speed"
+                    value={animationSpeed}
+                    onChange={(event) => setAnimationSpeed(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Stats remain outside the zoomed visualization. */}
               <div className="grid shrink-0 grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
                 <div className="min-w-0 px-1">
@@ -743,9 +1170,7 @@ export function LinkedListVisualizer() {
                       ∅
                     </div>
 
-                    <p className="text-lg font-semibold">
-                      Your list is empty
-                    </p>
+                    <p className="text-lg font-semibold">Your list is empty</p>
 
                     <p className="mt-2 text-sm text-muted-foreground">
                       Insert a node or generate a random list to begin.
@@ -770,11 +1195,24 @@ export function LinkedListVisualizer() {
 
                       {list.map((node, index) => {
                         const highlighted = activeNode === node.id;
+                        const isNew = newIds.includes(node.id);
+                        const newOrder = newIds.indexOf(node.id);
 
                         return (
                           <div key={node.id} className="flex items-center">
                             <div
-                              className={`relative flex h-24 w-24 flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 ${
+                              style={
+                                isNew
+                                  ? {
+                                      animation: `node-enter 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                                        newOrder * 120
+                                      }ms both, node-glow 1200ms ease-out ${
+                                        600 + newOrder * 120
+                                      }ms`,
+                                    }
+                                  : undefined
+                              }
+                              className={`anim-new relative flex h-24 w-24 flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 ${
                                 highlighted
                                   ? "z-10 scale-105 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
                                   : "border-border bg-card text-card-foreground"
@@ -796,6 +1234,17 @@ export function LinkedListVisualizer() {
                                 </span>
                               )}
 
+                              {isNew && (
+                                <span
+                                  className="absolute -right-2 -top-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                  style={{
+                                    animation: "badge-pop 400ms ease-out both",
+                                  }}
+                                >
+                                  NEW
+                                </span>
+                              )}
+
                               <span className="max-w-full break-all px-1 text-xl font-bold">
                                 {node.value}
                               </span>
@@ -805,9 +1254,7 @@ export function LinkedListVisualizer() {
 
                                 <span
                                   className={`h-2.5 w-2.5 rounded-full ${
-                                    highlighted
-                                      ? "bg-red-600"
-                                      : "bg-foreground"
+                                    highlighted ? "bg-red-600" : "bg-foreground"
                                   }`}
                                 />
                               </div>
