@@ -1,7 +1,7 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -37,6 +37,22 @@ type CodeInfo = {
   explanation: string[];
   complexity: string;
 };
+
+type HistoryEntry = {
+  id: number;
+  text: string;
+  op: Operation;
+  before: TreeNode | null;
+  after: TreeNode | null;
+  activeId: number | null;
+  traversal: number[] | null;
+  path?: number[] | null; // node ids in visit order (traversals only)
+  line: number | null;
+};
+
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
+
+type Step = { line: number | null; run: () => void };
 
 const pseudocode: Record<Operation, CodeInfo> = {
   insert: {
@@ -223,6 +239,7 @@ const secondaryButton =
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
 const ZOOM_STEP = 0.1;
+const MAX_HISTORY = 50;
 
 function makeNode(value: number, id: number): TreeNode {
   return { id, value, left: null, right: null };
@@ -303,11 +320,19 @@ function cloneTree(root: TreeNode | null): TreeNode | null {
   };
 }
 
-function treeValues(
-  root: TreeNode | null,
-  order: "inorder" | "preorder" | "postorder" | "levelorder"
-): number[] {
-  const result: number[] = [];
+function collectIds(root: TreeNode | null, out: number[] = []): number[] {
+  if (!root) return out;
+  out.push(root.id);
+  collectIds(root.left, out);
+  collectIds(root.right, out);
+  return out;
+}
+
+type TraversalOrder = "inorder" | "preorder" | "postorder" | "levelorder";
+
+// Returns the nodes in the order they are visited.
+function treeVisit(root: TreeNode | null, order: TraversalOrder): TreeNode[] {
+  const result: TreeNode[] = [];
 
   if (!root) return result;
 
@@ -317,7 +342,7 @@ function treeValues(
     while (queue.length) {
       const node = queue.shift()!;
 
-      result.push(node.value);
+      result.push(node);
 
       if (node.left) queue.push(node.left);
       if (node.right) queue.push(node.right);
@@ -330,19 +355,19 @@ function treeValues(
     if (!node) return;
 
     if (order === "preorder") {
-      result.push(node.value);
+      result.push(node);
     }
 
     visit(node.left);
 
     if (order === "inorder") {
-      result.push(node.value);
+      result.push(node);
     }
 
     visit(node.right);
 
     if (order === "postorder") {
-      result.push(node.value);
+      result.push(node);
     }
   };
 
@@ -350,6 +375,14 @@ function treeValues(
 
   return result;
 }
+
+// Pseudocode line (per traversal) that is highlighted when a node is visited.
+const VISIT_LINE: Record<TraversalOrder, number> = {
+  inorder: 3,
+  preorder: 2,
+  postorder: 4,
+  levelorder: 3,
+};
 
 function getStats(
   root: TreeNode | null
@@ -424,12 +457,40 @@ export function BinaryTreeVisualizer() {
   const [message, setMessage] = useState(
     "Choose an operation to get started."
   );
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[] | null>(null);
+  const [visitedIds, setVisitedIds] = useState<number[]>([]);
   const [randomCount, setRandomCount] = useState("7");
   const [minValue, setMinValue] = useState("1");
   const [maxValue, setMaxValue] = useState("100");
   const [zoom, setZoom] = useState(1);
+
+  // Playback + undo/redo state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState("1");
+  const [undoStack, setUndoStack] = useState<(TreeNode | null)[]>([]);
+  const [redoStack, setRedoStack] = useState<(TreeNode | null)[]>([]);
+
+  // Latest-value refs so timer callbacks never see stale state
+  const rootRef = useRef(root);
+  rootRef.current = root;
+  const nextIdRef = useRef(nextId);
+  nextIdRef.current = nextId;
+  const speedRef = useRef(animationSpeed);
+  speedRef.current = animationSpeed;
+
+  // Replay machinery
+  const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const traverseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const framesRef = useRef<Step[] | null>(null);
+  const frameIndexRef = useRef(0);
+  const replayOriginalRef = useRef<{ tree: TreeNode | null } | null>(null);
+  const historyIdRef = useRef(1);
+
+  // New-node animation tracking
+  const [newIds, setNewIds] = useState<number[]>([]);
+  const prevIdsRef = useRef<Set<number> | null>(null);
 
   const selectedCode = pseudocode[operation];
   const stats = useMemo(() => getStats(root), [root]);
@@ -439,11 +500,240 @@ export function BinaryTreeVisualizer() {
   const treeCanvasWidth = 1000;
   const treeCanvasHeight = Math.max(300, stats.height * 110 + 60);
 
-  function record(text: string) {
-    setHistory((old) => [text, ...old].slice(0, 8));
-    setMessage(text);
-    setTraversal(null);
+  // Detect any node that appeared (insert, redo, undo of delete, generate, replay)
+  useEffect(() => {
+    const ids = collectIds(root);
+    const prev = prevIdsRef.current;
+    prevIdsRef.current = new Set(ids);
+
+    if (prev === null) return;
+
+    const added = ids.filter((id) => !prev.has(id));
+    if (added.length === 0) {
+      setNewIds([]);
+      return;
+    }
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds([]), 1600);
+    return () => clearTimeout(t);
+  }, [root]);
+
+  // Clear playback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimer.current !== null) {
+        clearTimeout(playbackTimer.current);
+      }
+      if (traverseTimer.current !== null) {
+        clearTimeout(traverseTimer.current);
+      }
+    };
+  }, []);
+
+  function stopTraversalAnim() {
+    if (traverseTimer.current !== null) {
+      clearTimeout(traverseTimer.current);
+      traverseTimer.current = null;
+    }
   }
+
+  function record(text: string, meta?: HistoryMeta) {
+    if (meta) {
+      const entry: HistoryEntry = {
+        id: historyIdRef.current++,
+        text,
+        ...meta,
+      };
+      setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
+    }
+    setMessage(text);
+  }
+
+  // Trees are never mutated after being stored: every operation works on a clone.
+  function updateRoot(nextRoot: TreeNode | null) {
+    const current = rootRef.current;
+    setUndoStack((old) => [...old, current]);
+    setRedoStack([]);
+    rootRef.current = nextRoot;
+    setRoot(nextRoot);
+    setActiveNode(null);
+    setTraversal(null);
+    setVisitedIds([]);
+  }
+
+  /* ---------- HISTORY REPLAY ---------- */
+
+  // Stops any replay / traversal animation and puts the real tree back
+  function abortReplay() {
+    stopTraversalAnim();
+    setVisitedIds([]);
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+    if (replayOriginalRef.current) {
+      const original = replayOriginalRef.current.tree;
+      replayOriginalRef.current = null;
+      rootRef.current = original;
+      setRoot(original);
+    }
+    framesRef.current = null;
+    frameIndexRef.current = 0;
+    setReplayEntryId(null);
+    setActiveNode(null);
+    setActiveLine(null);
+  }
+
+  function runFrames() {
+    const tick = () => {
+      const frames = framesRef.current;
+      if (!frames) return;
+      const i = frameIndexRef.current;
+      if (i >= frames.length) {
+        playbackTimer.current = null;
+        framesRef.current = null;
+        frameIndexRef.current = 0;
+        setIsPlaying(false);
+        return;
+      }
+      frameIndexRef.current = i + 1;
+      setActiveLine(frames[i].line);
+      frames[i].run();
+      playbackTimer.current = setTimeout(
+        tick,
+        1000 / Number(speedRef.current)
+      );
+    };
+    tick();
+  }
+
+  function handlePause() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+  }
+
+  function handlePlay() {
+    if (isPlaying) return;
+
+    // Resume a paused replay
+    if (
+      framesRef.current &&
+      frameIndexRef.current < framesRef.current.length
+    ) {
+      setIsPlaying(true);
+      runFrames();
+      return;
+    }
+
+    if (history.length === 0) {
+      setMessage(
+        "No history to replay yet. Run a few operations, then press Play."
+      );
+      return;
+    }
+
+    stopTraversalAnim();
+    setVisitedIds([]);
+    const entries = history.slice().reverse(); // oldest first
+    const original = rootRef.current;
+    replayOriginalRef.current = { tree: original };
+
+    const frames: Step[] = [];
+
+    // 1. Rewind to the state before the first recorded operation
+    frames.push({
+      line: null,
+      run: () => {
+        const start = entries[0].before;
+        rootRef.current = start;
+        setRoot(start);
+        setActiveNode(null);
+        setTraversal(null);
+        setVisitedIds([]);
+        setReplayEntryId(null);
+        setMessage("Replay started from the initial state.");
+      },
+    });
+
+    // 2. Two frames per recorded operation: announce, then apply
+    entries.forEach((entry) => {
+      const title = pseudocode[entry.op].title;
+      frames.push({
+        line: 0,
+        run: () => {
+          setOperation(entry.op);
+          setReplayEntryId(entry.id);
+          setTraversal(null);
+          setVisitedIds([]);
+          setActiveNode(entry.op === "delete" ? entry.activeId : null);
+          setMessage(`Replaying: ${title}`);
+        },
+      });
+      frames.push({
+        line: entry.line,
+        run: () => {
+          rootRef.current = entry.after;
+          setRoot(entry.after);
+          setActiveNode(entry.op === "delete" ? null : entry.activeId);
+          setTraversal(entry.traversal);
+          setVisitedIds(entry.path ?? []);
+          setMessage(entry.text);
+        },
+      });
+    });
+
+    // 3. Put the real tree back (matters if you used Undo/Redo earlier)
+    frames.push({
+      line: null,
+      run: () => {
+        rootRef.current = original;
+        setRoot(original);
+        replayOriginalRef.current = null;
+        setReplayEntryId(null);
+        setActiveNode(null);
+        setMessage("Replay finished.");
+      },
+    });
+
+    framesRef.current = frames;
+    frameIndexRef.current = 0;
+    setIsPlaying(true);
+    runFrames();
+  }
+
+  /* ---------- UNDO / REDO ---------- */
+
+  function handleUndo() {
+    abortReplay();
+    if (undoStack.length === 0) return;
+    const current = rootRef.current;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((old) => [...old, current]);
+    setUndoStack((old) => old.slice(0, -1));
+    rootRef.current = previous;
+    setRoot(previous);
+    setTraversal(null);
+    setMessage("Undo successful.");
+  }
+
+  function handleRedo() {
+    abortReplay();
+    if (redoStack.length === 0) return;
+    const current = rootRef.current;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((old) => [...old, current]);
+    setRedoStack((old) => old.slice(0, -1));
+    rootRef.current = next;
+    setRoot(next);
+    setTraversal(null);
+    setMessage("Redo successful.");
+  }
+
+  /* ---------- OPERATIONS ---------- */
 
   function readNumber(): number | null {
     if (value.trim() === "" || !Number.isFinite(Number(value))) {
@@ -459,27 +749,39 @@ export function BinaryTreeVisualizer() {
 
     if (n === null) return;
 
-    const existing = findNode(root, n);
+    abortReplay();
+    const before = rootRef.current;
+    const existing = findNode(before, n);
 
     if (existing) {
       setOperation("insert");
       setActiveNode(existing.id);
       setActiveLine(6);
+      setTraversal(null);
       setMessage(
         `${n} already exists. Duplicate values are not inserted.`
       );
       return;
     }
 
-    const updated = cloneTree(root);
+    const id = nextIdRef.current;
+    const after = insertNode(cloneTree(before), n, id);
 
-    setRoot(insertNode(updated, n, nextId));
-    setActiveNode(nextId);
-    setNextId((old) => old + 1);
     setOperation("insert");
     setActiveLine(1);
+    updateRoot(after);
+    setActiveNode(id);
+    nextIdRef.current = id + 1;
+    setNextId(id + 1);
 
-    record(`Inserted ${n} into the binary search tree.`);
+    record(`Inserted ${n} into the binary search tree.`, {
+      op: "insert",
+      before,
+      after,
+      activeId: id,
+      traversal: null,
+      line: 1,
+    });
   }
 
   function remove() {
@@ -487,9 +789,12 @@ export function BinaryTreeVisualizer() {
 
     if (n === null) return;
 
-    const found = findNode(root, n);
+    abortReplay();
+    const before = rootRef.current;
+    const found = findNode(before, n);
 
     setOperation("delete");
+    setTraversal(null);
     setActiveLine(found ? 4 : 1);
 
     if (!found) {
@@ -498,12 +803,18 @@ export function BinaryTreeVisualizer() {
       return;
     }
 
-    const updated = cloneTree(root);
+    const after = deleteNode(cloneTree(before), n);
 
-    setRoot(deleteNode(updated, n));
-    setActiveNode(null);
+    updateRoot(after);
 
-    record(`Deleted ${n} from the binary search tree.`);
+    record(`Deleted ${n} from the binary search tree.`, {
+      op: "delete",
+      before,
+      after,
+      activeId: found.id,
+      traversal: null,
+      line: 4,
+    });
   }
 
   function search() {
@@ -511,30 +822,43 @@ export function BinaryTreeVisualizer() {
 
     if (n === null) return;
 
-    const found = findNode(root, n);
+    abortReplay();
+    const before = rootRef.current;
+    const found = findNode(before, n);
+    const line = found ? 2 : 1;
 
     setOperation("search");
-    setActiveLine(found ? 2 : 1);
+    setActiveLine(line);
     setActiveNode(found?.id ?? null);
     setTraversal(null);
 
-    setMessage(
+    record(
       found
         ? `Found ${n} in the binary search tree.`
-        : `Value ${n} was not found.`
+        : `Value ${n} was not found.`,
+      {
+        op: "search",
+        before,
+        after: before,
+        activeId: found?.id ?? null,
+        traversal: null,
+        line,
+      }
     );
   }
 
-  function traverse(
-    order: "inorder" | "preorder" | "postorder" | "levelorder"
-  ) {
+  function traverse(order: TraversalOrder) {
+    abortReplay();
+    const before = rootRef.current;
+
     setOperation(order);
     setActiveLine(null);
     setActiveNode(null);
 
-    const values = treeValues(root, order);
-
-    setTraversal(values);
+    const visitNodes = treeVisit(before, order);
+    const values = visitNodes.map((node) => node.value);
+    const ids = visitNodes.map((node) => node.id);
+    const visitLine = VISIT_LINE[order];
 
     const labels = {
       inorder: "Inorder",
@@ -543,21 +867,74 @@ export function BinaryTreeVisualizer() {
       levelorder: "Level-order",
     };
 
-    setMessage(
-      values.length
-        ? `${labels[order]} traversal completed (${values.length} nodes).`
-        : "The tree is empty."
-    );
+    const finalText = values.length
+      ? `${labels[order]} traversal completed (${values.length} nodes).`
+      : "The tree is empty.";
+
+    // Recorded up front so it appears in History; replay shows the full path.
+    record(finalText, {
+      op: order,
+      before,
+      after: before,
+      activeId: null,
+      traversal: values,
+      path: ids,
+      line: values.length ? visitLine : null,
+    });
+
+    if (values.length === 0) {
+      setTraversal([]);
+      return;
+    }
+
+    // Walk the tree one node at a time, lighting up the path as it goes.
+    setTraversal([]);
+    let step = 0;
+
+    const tick = () => {
+      setActiveLine(visitLine);
+      setActiveNode(ids[step]);
+      setVisitedIds(ids.slice(0, step + 1));
+      setTraversal(values.slice(0, step + 1));
+      setMessage(
+        `${labels[order]}: visiting ${values[step]} (${step + 1} of ${values.length})`
+      );
+      step++;
+
+      if (step < ids.length) {
+        traverseTimer.current = setTimeout(
+          tick,
+          800 / Number(speedRef.current)
+        );
+      } else {
+        traverseTimer.current = setTimeout(() => {
+          traverseTimer.current = null;
+          setActiveNode(null);
+          setActiveLine(null);
+          setMessage(finalText);
+        }, 800 / Number(speedRef.current));
+      }
+    };
+
+    tick();
   }
 
   function clearTree() {
+    abortReplay();
+    const before = rootRef.current;
+
     setOperation("clear");
     setActiveLine(0);
-    setRoot(null);
-    setActiveNode(null);
-    setTraversal(null);
+    updateRoot(null);
 
-    record("Cleared the binary tree.");
+    record("Cleared the binary tree.", {
+      op: "clear",
+      before,
+      after: null,
+      activeId: null,
+      traversal: null,
+      line: 0,
+    });
   }
 
   function generateRandom() {
@@ -580,9 +957,11 @@ export function BinaryTreeVisualizer() {
       return;
     }
 
+    abortReplay();
+    const before = rootRef.current;
     let generated: TreeNode | null = null;
     const used = new Set<number>();
-    let id = nextId;
+    let id = nextIdRef.current;
 
     while (used.size < count) {
       const n =
@@ -594,20 +973,46 @@ export function BinaryTreeVisualizer() {
       generated = insertNode(generated, n, id++);
     }
 
-    setRoot(generated);
+    updateRoot(generated);
+    nextIdRef.current = id;
     setNextId(id);
     setOperation("levelorder");
     setActiveLine(null);
-    setActiveNode(null);
-    setTraversal(null);
 
     record(
-      `Generated a binary search tree with ${count} random nodes.`
+      `Generated a binary search tree with ${count} random nodes.`,
+      {
+        op: "levelorder",
+        before,
+        after: generated,
+        activeId: null,
+        traversal: null,
+        line: null,
+      }
     );
   }
 
   return (
     <main className="flex min-h-screen flex-col bg-background text-foreground">
+      <style>{`
+        @keyframes node-fade {
+          0%   { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        @keyframes node-glow {
+          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
+        }
+        @keyframes badge-pop {
+          0%   { transform: scale(0); }
+          60%  { transform: scale(1.25); }
+          100% { transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .anim-new { animation: none !important; }
+        }
+      `}</style>
+
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -753,12 +1158,20 @@ export function BinaryTreeVisualizer() {
 
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
-              <CardTitle className="text-sm">History</CardTitle>
+              <div>
+                <CardTitle className="text-sm">History</CardTitle>
+                <CardDescription className="text-[11px]">
+                  Press Play to replay
+                </CardDescription>
+              </div>
 
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setHistory([])}
+                onClick={() => {
+                  abortReplay();
+                  setHistory([]);
+                }}
                 className="h-6 px-2 text-[11px] text-muted-foreground"
               >
                 Clear
@@ -771,14 +1184,18 @@ export function BinaryTreeVisualizer() {
                   Recent operations appear here.
                 </p>
               ) : (
-                <ul className="space-y-1.5">
-                  {history.map((item, index) => (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {history.map((item) => (
                     <li
-                      key={`${item}-${index}`}
-                      className="flex gap-1.5 text-[11px] leading-snug"
+                      key={item.id}
+                      className={`flex gap-1.5 rounded px-1 text-[11px] leading-snug transition-colors ${
+                        replayEntryId === item.id
+                          ? "bg-red-50 font-medium text-red-800 dark:bg-red-950/40 dark:text-red-200"
+                          : ""
+                      }`}
                     >
                       <span className="font-bold text-red-600">↳</span>
-                      <span className="min-w-0 break-words">{item}</span>
+                      <span className="min-w-0 break-words">{item.text}</span>
                     </li>
                   ))}
                 </ul>
@@ -859,6 +1276,69 @@ export function BinaryTreeVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* PLAYBACK CONTROLS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" /> Play
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="gap-2"
+                  >
+                    <Pause className="h-4 w-4" /> Pause
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Undo2 className="h-4 w-4" /> Undo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Redo2 className="h-4 w-4" /> Redo
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <label htmlFor="animation-speed" className="text-sm">
+                    Speed
+                  </label>
+                  <select
+                    id="animation-speed"
+                    value={animationSpeed}
+                    onChange={(event) => setAnimationSpeed(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+
               {/* These statistics are outside the zoomed canvas. */}
               <div className="grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-muted/40 py-3 text-center">
                 <div className="min-w-0 px-2">
@@ -927,39 +1407,79 @@ export function BinaryTreeVisualizer() {
                               y1={item.parentY! + 28}
                               x2={item.x}
                               y2={item.y - 28}
-                              stroke="currentColor"
-                              strokeOpacity="0.4"
-                              strokeWidth="2.2"
+                              stroke={
+                                visitedIds.includes(item.node.id)
+                                  ? "#dc2626"
+                                  : "currentColor"
+                              }
+                              strokeOpacity={
+                                visitedIds.includes(item.node.id) ? 1 : 0.4
+                              }
+                              strokeWidth={
+                                visitedIds.includes(item.node.id) ? 4 : 2.2
+                              }
+                              style={{ transition: "stroke 300ms, stroke-width 300ms" }}
                             />
                           ))}
                       </svg>
 
-                      {positioned.map(({ node, x, y }) => (
-                        <div
-                          key={node.id}
-                          className={`absolute z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-16 sm:w-16 ${
-                            activeNode === node.id
-                              ? "border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/20 dark:bg-red-950/50 dark:text-red-100"
-                              : node.id === root?.id
-                                ? "border-red-500 bg-red-50 text-red-950 shadow-md dark:bg-red-950/40 dark:text-red-100"
-                                : "border-border bg-card shadow-sm"
-                          }`}
-                          style={{
-                            left: `${x}px`,
-                            top: `${y}px`,
-                          }}
-                        >
-                          <span className="text-lg font-bold leading-none sm:text-xl">
-                            {node.value}
-                          </span>
+                      {positioned.map(({ node, x, y }) => {
+                        const isNew = newIds.includes(node.id);
+                        const visitIndex = visitedIds.indexOf(node.id);
+                        const isVisited = visitIndex !== -1;
 
-                          {activeNode === node.id && (
-                            <span className="absolute -top-4 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
-                              ACTIVE
+                        return (
+                          <div
+                            key={node.id}
+                            className={`anim-new absolute z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-16 sm:w-16 ${
+                              activeNode === node.id
+                                ? "border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/20 dark:bg-red-950/50 dark:text-red-100"
+                                : isVisited
+                                  ? "border-red-400 bg-red-100 text-red-900 shadow-md dark:bg-red-950/60 dark:text-red-100"
+                                  : node.id === root?.id
+                                  ? "border-red-500 bg-red-50 text-red-950 shadow-md dark:bg-red-950/40 dark:text-red-100"
+                                  : "border-border bg-card shadow-sm"
+                            }`}
+                            style={{
+                              left: `${x}px`,
+                              top: `${y}px`,
+                              ...(isNew
+                                ? {
+                                    animation:
+                                      "node-fade 500ms ease-out both, node-glow 1200ms ease-out 400ms",
+                                  }
+                                : {}),
+                            }}
+                          >
+                            <span className="text-lg font-bold leading-none sm:text-xl">
+                              {node.value}
                             </span>
-                          )}
-                        </div>
-                      ))}
+
+                            {activeNode === node.id && (
+                              <span className="absolute -top-4 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                                ACTIVE
+                              </span>
+                            )}
+
+                            {isVisited && (
+                              <span className="absolute -bottom-2 -left-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+                                {visitIndex + 1}
+                              </span>
+                            )}
+
+                            {isNew && (
+                              <span
+                                className="absolute -right-3 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                style={{
+                                  animation: "badge-pop 400ms ease-out both",
+                                }}
+                              >
+                                NEW
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

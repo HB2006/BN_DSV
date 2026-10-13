@@ -1,7 +1,7 @@
-
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import type { HeapNode } from "./type";
 
 import {
@@ -30,6 +30,21 @@ type Operation =
   | "get-min"
   | "traverse"
   | "clear";
+
+type HistoryEntry = {
+  id: number;
+  text: string;
+  op: Operation;
+  before: HeapNode[];
+  after: HeapNode[];
+  activeId: number | null;
+  traversal: number[] | null;
+  line: number | null;
+};
+
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
+
+type Step = { line: number | null; run: () => void };
 
 const pseudocode: Record<
   Operation,
@@ -197,6 +212,7 @@ const secondaryButton =
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
 const ZOOM_STEP = 0.1;
+const MAX_HISTORY = 50;
 
 export function HeapVisualizer() {
   const [heap, setHeap] = useState<HeapNode[]>([
@@ -215,14 +231,65 @@ export function HeapVisualizer() {
   const [message, setMessage] = useState(
     "Choose an operation to get started."
   );
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[] | null>(null);
   const [randomCount, setRandomCount] = useState("7");
   const [minValue, setMinValue] = useState("1");
   const [maxValue, setMaxValue] = useState("100");
   const [zoom, setZoom] = useState(1);
 
+  // Playback + undo/redo state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationSpeed, setAnimationSpeed] = useState("1");
+  const [undoStack, setUndoStack] = useState<HeapNode[][]>([]);
+  const [redoStack, setRedoStack] = useState<HeapNode[][]>([]);
+
   const selectedCode = pseudocode[operation];
+
+  // Latest-value refs so timer callbacks never see stale state
+  const heapRef = useRef(heap);
+  heapRef.current = heap;
+  const nextIdRef = useRef(nextId);
+  nextIdRef.current = nextId;
+  const speedRef = useRef(animationSpeed);
+  speedRef.current = animationSpeed;
+
+  // Replay machinery
+  const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const framesRef = useRef<Step[] | null>(null);
+  const frameIndexRef = useRef(0);
+  const replayOriginalRef = useRef<HeapNode[] | null>(null);
+  const historyIdRef = useRef(1);
+
+  // New-node animation tracking
+  const [newIds, setNewIds] = useState<number[]>([]);
+  const prevIdsRef = useRef<Set<number>>(new Set(heap.map((n) => n.id)));
+
+  // Detect any node that appeared (insert, redo, undo of delete, generate, replay)
+  useEffect(() => {
+    const prev = prevIdsRef.current;
+    const ids = heap.map((n) => n.id);
+    const added = ids.filter((id) => !prev.has(id));
+    prevIdsRef.current = new Set(ids);
+
+    if (added.length === 0) {
+      setNewIds([]);
+      return;
+    }
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds([]), 1600);
+    return () => clearTimeout(t);
+  }, [heap]);
+
+  // Clear playback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimer.current !== null) {
+        clearTimeout(playbackTimer.current);
+      }
+    };
+  }, []);
 
   function zoomIn() {
     setZoom((z) =>
@@ -240,11 +307,194 @@ export function HeapVisualizer() {
     setZoom(1);
   }
 
-  function record(text: string) {
-    setHistory((old) => [text, ...old].slice(0, 8));
+  function record(text: string, meta?: HistoryMeta) {
+    if (meta) {
+      const entry: HistoryEntry = {
+        id: historyIdRef.current++,
+        text,
+        ...meta,
+      };
+      setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
+    }
     setMessage(text);
+  }
+
+  function updateHeap(nextHeap: HeapNode[]) {
+    const current = heapRef.current;
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack([]);
+    heapRef.current = nextHeap;
+    setHeap(nextHeap);
+    setActiveNode(null);
     setTraversal(null);
   }
+
+  /* ---------- HISTORY REPLAY ---------- */
+
+  // Stops any replay and puts the real heap back
+  function abortReplay() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+    if (replayOriginalRef.current) {
+      const original = replayOriginalRef.current;
+      replayOriginalRef.current = null;
+      heapRef.current = original;
+      setHeap(original);
+    }
+    framesRef.current = null;
+    frameIndexRef.current = 0;
+    setReplayEntryId(null);
+    setActiveNode(null);
+    setActiveLine(null);
+  }
+
+  function runFrames() {
+    const tick = () => {
+      const frames = framesRef.current;
+      if (!frames) return;
+      const i = frameIndexRef.current;
+      if (i >= frames.length) {
+        playbackTimer.current = null;
+        framesRef.current = null;
+        frameIndexRef.current = 0;
+        setIsPlaying(false);
+        return;
+      }
+      frameIndexRef.current = i + 1;
+      setActiveLine(frames[i].line);
+      frames[i].run();
+      playbackTimer.current = setTimeout(
+        tick,
+        1000 / Number(speedRef.current)
+      );
+    };
+    tick();
+  }
+
+  function handlePause() {
+    if (playbackTimer.current !== null) {
+      clearTimeout(playbackTimer.current);
+      playbackTimer.current = null;
+    }
+    setIsPlaying(false);
+  }
+
+  function handlePlay() {
+    if (isPlaying) return;
+
+    // Resume a paused replay
+    if (
+      framesRef.current &&
+      frameIndexRef.current < framesRef.current.length
+    ) {
+      setIsPlaying(true);
+      runFrames();
+      return;
+    }
+
+    if (history.length === 0) {
+      setMessage(
+        "No history to replay yet. Run a few operations, then press Play."
+      );
+      return;
+    }
+
+    const entries = history.slice().reverse(); // oldest first
+    const original = heapRef.current;
+    replayOriginalRef.current = original;
+
+    const frames: Step[] = [];
+
+    // 1. Rewind to the state before the first recorded operation
+    frames.push({
+      line: null,
+      run: () => {
+        const start = entries[0].before;
+        heapRef.current = start;
+        setHeap(start);
+        setActiveNode(null);
+        setTraversal(null);
+        setReplayEntryId(null);
+        setMessage("Replay started from the initial state.");
+      },
+    });
+
+    // 2. Two frames per recorded operation: announce, then apply
+    entries.forEach((entry) => {
+      const title = pseudocode[entry.op].title;
+      frames.push({
+        line: 0,
+        run: () => {
+          setOperation(entry.op);
+          setReplayEntryId(entry.id);
+          setTraversal(null);
+          setActiveNode(entry.op === "delete-min" ? entry.activeId : null);
+          setMessage(`Replaying: ${title}`);
+        },
+      });
+      frames.push({
+        line: entry.line,
+        run: () => {
+          heapRef.current = entry.after;
+          setHeap(entry.after);
+          setActiveNode(entry.op === "delete-min" ? null : entry.activeId);
+          setTraversal(entry.traversal);
+          setMessage(entry.text);
+        },
+      });
+    });
+
+    // 3. Put the real heap back (matters if you used Undo/Redo earlier)
+    frames.push({
+      line: null,
+      run: () => {
+        heapRef.current = original;
+        setHeap(original);
+        replayOriginalRef.current = null;
+        setReplayEntryId(null);
+        setActiveNode(null);
+        setMessage("Replay finished.");
+      },
+    });
+
+    framesRef.current = frames;
+    frameIndexRef.current = 0;
+    setIsPlaying(true);
+    runFrames();
+  }
+
+  /* ---------- UNDO / REDO ---------- */
+
+  function handleUndo() {
+    abortReplay();
+    if (undoStack.length === 0) return;
+    const current = heapRef.current;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((old) => [...old, [...current]]);
+    setUndoStack((old) => old.slice(0, -1));
+    heapRef.current = [...previous];
+    setHeap([...previous]);
+    setTraversal(null);
+    setMessage("Undo successful.");
+  }
+
+  function handleRedo() {
+    abortReplay();
+    if (redoStack.length === 0) return;
+    const current = heapRef.current;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((old) => [...old, [...current]]);
+    setRedoStack((old) => old.slice(0, -1));
+    heapRef.current = [...next];
+    setHeap([...next]);
+    setTraversal(null);
+    setMessage("Redo successful.");
+  }
+
+  /* ---------- OPERATIONS ---------- */
 
   function readNumber(): number | null {
     if (value.trim() === "" || !Number.isFinite(Number(value))) {
@@ -259,55 +509,99 @@ export function HeapVisualizer() {
     const n = readNumber();
     if (n === null) return;
 
+    abortReplay();
+    const before = heapRef.current;
+    const id = nextIdRef.current;
+    const after = insertHeap(before, n, id);
+
     setOperation("insert");
     setActiveLine(6);
-    setActiveNode(nextId);
-    setHeap((old) => insertHeap(old, n, nextId));
-    setNextId((old) => old + 1);
-    record(`Inserted ${n} into the min-heap.`);
+    updateHeap(after);
+    setActiveNode(id);
+    nextIdRef.current = id + 1;
+    setNextId(id + 1);
+
+    record(`Inserted ${n} into the min-heap.`, {
+      op: "insert",
+      before,
+      after,
+      activeId: id,
+      traversal: null,
+      line: 6,
+    });
   }
 
   function removeMinimum() {
-    setOperation("delete-min");
+    abortReplay();
+    const before = heapRef.current;
 
-    if (heap.length === 0) {
+    setOperation("delete-min");
+    setTraversal(null);
+
+    if (before.length === 0) {
       setActiveLine(1);
       setActiveNode(null);
       setMessage("Cannot delete from an empty heap.");
       return;
     }
 
-    const minValue = heap[0].value;
+    const minValue = before[0].value;
+    const minId = before[0].id;
+    const after = deleteMin(before);
 
     setActiveLine(9);
-    setActiveNode(null);
-    setHeap((old) => deleteMin(old));
-    record(`Deleted the minimum value ${minValue}.`);
+    updateHeap(after);
+
+    record(`Deleted the minimum value ${minValue}.`, {
+      op: "delete-min",
+      before,
+      after,
+      activeId: minId,
+      traversal: null,
+      line: 9,
+    });
   }
 
   function search() {
     const n = readNumber();
     if (n === null) return;
 
+    abortReplay();
+    const before = heapRef.current;
+
     setOperation("search");
-
-    const index = searchHeap(heap, n);
-
-    setActiveLine(index === -1 ? 4 : 2);
-    setActiveNode(index === -1 ? null : heap[index].id);
     setTraversal(null);
 
-    setMessage(
+    const index = searchHeap(before, n);
+    const line = index === -1 ? 4 : 2;
+    const activeId = index === -1 ? null : before[index].id;
+
+    setActiveLine(line);
+    setActiveNode(activeId);
+
+    record(
       index === -1
         ? `Value ${n} was not found.`
-        : `Found ${n} at array index ${index}.`
+        : `Found ${n} at array index ${index}.`,
+      {
+        op: "search",
+        before,
+        after: before,
+        activeId,
+        traversal: null,
+        line,
+      }
     );
   }
 
   function peekMinimum() {
-    setOperation("get-min");
+    abortReplay();
+    const before = heapRef.current;
 
-    if (heap.length === 0) {
+    setOperation("get-min");
+    setTraversal(null);
+
+    if (before.length === 0) {
       setActiveLine(1);
       setActiveNode(null);
       setMessage("The heap is empty. No minimum exists.");
@@ -315,33 +609,62 @@ export function HeapVisualizer() {
     }
 
     setActiveLine(2);
-    setActiveNode(heap[0].id);
-    setTraversal(null);
-    setMessage(`Minimum value: ${getMin(heap)}.`);
+    setActiveNode(before[0].id);
+
+    record(`Minimum value: ${getMin(before)}.`, {
+      op: "get-min",
+      before,
+      after: before,
+      activeId: before[0].id,
+      traversal: null,
+      line: 2,
+    });
   }
 
   function traverse() {
+    abortReplay();
+    const before = heapRef.current;
+
     setOperation("traverse");
     setActiveLine(2);
     setActiveNode(null);
 
-    const values = heap.map((node) => node.value);
+    const values = before.map((node) => node.value);
 
     setTraversal(values);
-    setMessage(
+
+    record(
       values.length
         ? `Traversed ${values.length} heap elements in level order.`
-        : "The heap is empty."
+        : "The heap is empty.",
+      {
+        op: "traverse",
+        before,
+        after: before,
+        activeId: null,
+        traversal: values,
+        line: 2,
+      }
     );
   }
 
   function clearHeap() {
+    abortReplay();
+    const before = heapRef.current;
+    const after: HeapNode[] = [];
+
     setOperation("clear");
     setActiveLine(1);
-    setActiveNode(null);
-    setHeap([]);
-    setTraversal(null);
-    record("Cleared the heap.");
+    updateHeap(after);
+
+    record("Cleared the heap.", {
+      op: "clear",
+      before,
+      after,
+      activeId: null,
+      traversal: null,
+      line: 1,
+    });
   }
 
   function generateRandom() {
@@ -363,6 +686,10 @@ export function HeapVisualizer() {
       return;
     }
 
+    abortReplay();
+    const before = heapRef.current;
+    const startId = nextIdRef.current;
+
     const values = Array.from(
       { length: count },
       () => Math.floor(Math.random() * (max - min + 1)) + min
@@ -371,16 +698,23 @@ export function HeapVisualizer() {
     let generated: HeapNode[] = [];
 
     values.forEach((n, index) => {
-      generated = insertHeap(generated, n, nextId + index);
+      generated = insertHeap(generated, n, startId + index);
     });
 
-    setHeap(generated);
-    setNextId((old) => old + count);
+    updateHeap(generated);
+    nextIdRef.current = startId + count;
+    setNextId(startId + count);
     setOperation("traverse");
     setActiveLine(null);
-    setActiveNode(null);
-    setTraversal(null);
-    record(`Generated a min-heap with ${count} random nodes.`);
+
+    record(`Generated a min-heap with ${count} random nodes.`, {
+      op: "traverse",
+      before,
+      after: generated,
+      activeId: null,
+      traversal: null,
+      line: null,
+    });
   }
 
   const levels = Array.from(
@@ -401,6 +735,26 @@ export function HeapVisualizer() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
+      <style>{`
+        @keyframes node-enter {
+          0%   { opacity: 0; transform: translateY(-30px) scale(0.85); }
+          60%  { opacity: 1; transform: translateY(4px) scale(1.05); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes node-glow {
+          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
+        }
+        @keyframes badge-pop {
+          0%   { transform: scale(0); }
+          60%  { transform: scale(1.25); }
+          100% { transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .anim-new { animation: none !important; }
+        }
+      `}</style>
+
       {/* PAGE HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <div>
@@ -534,11 +888,19 @@ export function HeapVisualizer() {
           {/* HISTORY */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
-              <CardTitle className="text-sm">History</CardTitle>
+              <div>
+                <CardTitle className="text-sm">History</CardTitle>
+                <CardDescription className="text-[11px]">
+                  Press Play to replay
+                </CardDescription>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setHistory([])}
+                onClick={() => {
+                  abortReplay();
+                  setHistory([]);
+                }}
                 className="h-6 px-2 text-[11px] text-muted-foreground"
               >
                 Clear
@@ -551,14 +913,18 @@ export function HeapVisualizer() {
                   Recent operations appear here.
                 </p>
               ) : (
-                <ul className="space-y-1.5">
-                  {history.map((item, index) => (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {history.map((item) => (
                     <li
-                      key={`${item}-${index}`}
-                      className="flex gap-1.5 text-[11px] leading-snug"
+                      key={item.id}
+                      className={`flex gap-1.5 rounded px-1 text-[11px] leading-snug transition-colors ${
+                        replayEntryId === item.id
+                          ? "bg-red-50 font-medium text-red-800 dark:bg-red-950/40 dark:text-red-200"
+                          : ""
+                      }`}
                     >
                       <span className="font-bold text-red-600">↳</span>
-                      <span className="min-w-0 break-words">{item}</span>
+                      <span className="min-w-0 break-words">{item.text}</span>
                     </li>
                   ))}
                 </ul>
@@ -627,6 +993,69 @@ export function HeapVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
+              {/* PLAYBACK CONTROLS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" /> Play
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="gap-2"
+                  >
+                    <Pause className="h-4 w-4" /> Pause
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Undo2 className="h-4 w-4" /> Undo
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="gap-2"
+                  >
+                    <Redo2 className="h-4 w-4" /> Redo
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <label htmlFor="animation-speed" className="text-sm">
+                    Speed
+                  </label>
+                  <select
+                    id="animation-speed"
+                    value={animationSpeed}
+                    onChange={(event) => setAnimationSpeed(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="0.5">0.5×</option>
+                    <option value="1">1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4×</option>
+                  </select>
+                </div>
+              </div>
+
               {/* STATISTICS - NOT AFFECTED BY ZOOM */}
               <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
                 <div className="min-w-0 px-1">
@@ -684,6 +1113,8 @@ export function HeapVisualizer() {
                             >
                               {nodes.map(({ node, index }) => {
                                 const highlighted = activeNode === node.id;
+                                const isNew = newIds.includes(node.id);
+                                const newOrder = newIds.indexOf(node.id);
                                 const left = 2 * index + 1;
                                 const right = 2 * index + 2;
 
@@ -693,7 +1124,18 @@ export function HeapVisualizer() {
                                     className="flex w-20 shrink-0 flex-col items-center gap-2"
                                   >
                                     <div
-                                      className={`relative flex h-16 w-16 flex-col items-center justify-center rounded-full border-2 transition-all duration-300 ${
+                                      style={
+                                        isNew
+                                          ? {
+                                              animation: `node-enter 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                                                newOrder * 120
+                                              }ms both, node-glow 1200ms ease-out ${
+                                                600 + newOrder * 120
+                                              }ms`,
+                                            }
+                                          : undefined
+                                      }
+                                      className={`anim-new relative flex h-16 w-16 flex-col items-center justify-center rounded-full border-2 transition-all duration-300 ${
                                         highlighted
                                           ? "scale-110 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
                                           : index === 0
@@ -704,6 +1146,18 @@ export function HeapVisualizer() {
                                       {highlighted && (
                                         <span className="absolute -top-3 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
                                           ACTIVE
+                                        </span>
+                                      )}
+
+                                      {isNew && (
+                                        <span
+                                          className="absolute -right-3 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                          style={{
+                                            animation:
+                                              "badge-pop 400ms ease-out both",
+                                          }}
+                                        >
+                                          NEW
                                         </span>
                                       )}
 
@@ -751,21 +1205,33 @@ export function HeapVisualizer() {
 
                 <div className="flex max-h-24 flex-wrap gap-1.5 overflow-auto">
                   {heap.length ? (
-                    heap.map((node, index) => (
-                      <div
-                        key={node.id}
-                        className={`min-w-12 rounded-md border px-2 py-1 text-center ${
-                          activeNode === node.id
-                            ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-                            : "border-border bg-muted/30"
-                        }`}
-                      >
-                        <p className="text-[9px] text-muted-foreground">
-                          [{index}]
-                        </p>
-                        <p className="text-sm font-bold">{node.value}</p>
-                      </div>
-                    ))
+                    heap.map((node, index) => {
+                      const isNew = newIds.includes(node.id);
+
+                      return (
+                        <div
+                          key={node.id}
+                          style={
+                            isNew
+                              ? {
+                                  animation:
+                                    "node-enter 500ms ease-out both, node-glow 1000ms ease-out 500ms",
+                                }
+                              : undefined
+                          }
+                          className={`anim-new min-w-12 rounded-md border px-2 py-1 text-center ${
+                            activeNode === node.id
+                              ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                              : "border-border bg-muted/30"
+                          }`}
+                        >
+                          <p className="text-[9px] text-muted-foreground">
+                            [{index}]
+                          </p>
+                          <p className="text-sm font-bold">{node.value}</p>
+                        </div>
+                      );
+                    })
                   ) : (
                     <span className="text-xs text-muted-foreground">
                       No elements
