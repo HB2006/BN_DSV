@@ -1,8 +1,7 @@
-
 "use client";
 
 import { useState } from "react";
-import type { ListNode } from "./type";
+import type { ListNode, QueueOperation } from "./type";
 import { enqueue } from "./queue-operation";
 
 import {
@@ -195,12 +194,6 @@ export default function QueueVisualizer() {
     setMessage(text);
   };
 
-  const resetHighlights = () => {
-    setHighlightedValue(null);
-    setTraversal(null);
-    setActiveLine(null);
-  };
-
   const handleEnqueue = () => {
     if (inputValue.trim() === "") {
       setMessage("Please enter a value to enqueue.");
@@ -378,7 +371,8 @@ export default function QueueVisualizer() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
+    /* FIX 1: no h-screen / overflow-hidden — the page scrolls naturally */
+    <main className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -394,8 +388,10 @@ export default function QueueVisualizer() {
         </Badge>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
-        <aside className="min-h-0 min-w-0 space-y-3 lg:overflow-y-auto lg:pr-1">
+      {/* FIX 2: no min-h-0 / flex-1; items-start so columns don't stretch */}
+      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        {/* FIX 3: sticky sidebar with a max height */}
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           <Card>
             <CardHeader className="p-3 pb-2">
               <CardTitle className="text-sm">Operations</CardTitle>
@@ -575,8 +571,10 @@ export default function QueueVisualizer() {
           </Alert>
         </aside>
 
-        <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 lg:grid-rows-2">
-          <Card className="flex min-h-[420px] min-w-0 flex-col overflow-hidden">
+        {/* FIX 4: simple vertical flow, no grid-rows-2 */}
+        <section className="flex min-w-0 flex-col gap-3">
+          {/* FIX 5: card sizes to its content */}
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
               <div>
                 <CardTitle className="text-base">
@@ -625,7 +623,7 @@ export default function QueueVisualizer() {
               </div>
             </CardHeader>
 
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
+            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg border bg-muted/20 p-2">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
@@ -655,7 +653,9 @@ export default function QueueVisualizer() {
                 </div>
               </div>
 
-              <div className="flex min-h-[160px] flex-1 flex-col overflow-hidden rounded-lg border bg-muted/10">
+              {/* FIX 6: fixed-height scroll area; m-auto on the child so
+                  long queues scroll instead of being clipped on the left */}
+              <div className="flex flex-col overflow-hidden rounded-lg border bg-muted/10">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-xs font-medium">Queue Structure</span>
                   <Badge variant="outline" className="text-[10px]">
@@ -663,9 +663,9 @@ export default function QueueVisualizer() {
                   </Badge>
                 </div>
 
-                <div className="flex min-h-0 flex-1 items-center overflow-auto p-4">
+                <div className="flex h-[280px] overflow-auto p-4">
                   {queue.length === 0 ? (
-                    <div className="w-full text-center">
+                    <div className="m-auto text-center">
                       <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
                         ∅
                       </div>
@@ -676,7 +676,7 @@ export default function QueueVisualizer() {
                     </div>
                   ) : (
                     <div
-                      className="mx-auto flex min-w-max items-center gap-3 py-4 transition-transform"
+                      className="m-auto flex min-w-max items-center gap-3 px-3 py-4 transition-transform"
                       style={{ zoom }}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -701,7 +701,7 @@ export default function QueueVisualizer() {
                               <div
                                 className={`flex h-16 min-w-16 items-center justify-center rounded-xl border-2 px-3 text-lg font-bold shadow-sm transition-all ${
                                   isHighlighted
-                                    ? "scale-105 border-red-600 bg-red-100 text-red-800 ring-2 ring-red-300"
+                                    ? "border-red-600 bg-red-100 text-red-800 ring-2 ring-red-300"
                                     : isFront
                                       ? "border-red-400 bg-red-50 text-red-700"
                                       : "border-border bg-card text-foreground"
@@ -828,8 +828,9 @@ export default function QueueVisualizer() {
             </CardContent>
           </Card>
 
-          <div className="grid min-h-[420px] min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-            <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          {/* FIX 8: no fixed min height; inner areas scroll with max-h */}
+          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
+            <Card className="flex min-w-0 flex-col overflow-hidden">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="text-sm">Pseudocode</CardTitle>
@@ -842,8 +843,8 @@ export default function QueueVisualizer() {
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
-                <div className="min-h-0 flex-1 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
+              <CardContent className="flex flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
+                <div className="max-h-[300px] overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
                   {selectedCode.lines.map((line, index) => (
                     <div
                       key={`${operation}-${index}`}
@@ -878,7 +879,7 @@ export default function QueueVisualizer() {
               </CardContent>
             </Card>
 
-            <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <Card className="flex min-w-0 flex-col overflow-hidden md:max-h-[560px]">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <CardTitle className="text-sm">Time Complexity</CardTitle>
                 <CardDescription className="text-xs">
@@ -886,7 +887,7 @@ export default function QueueVisualizer() {
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
+              <CardContent className="flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
                 <div className="space-y-2">
                   {complexity.map((item) => {
                     const normalizedOperation =

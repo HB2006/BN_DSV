@@ -390,7 +390,8 @@ export function StackVisualizer() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
+    /* FIX 1: no h-screen / overflow-hidden — the page scrolls naturally */
+    <main className="flex min-h-screen flex-col bg-background text-foreground">
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
@@ -407,10 +408,12 @@ export function StackVisualizer() {
         </Badge>
       </header>
 
-      {/* MAIN LAYOUT */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
-        {/* LEFT SIDEBAR */}
-        <aside className="min-h-0 min-w-0 space-y-3 lg:overflow-y-auto lg:pr-1">
+      {/* MAIN LAYOUT
+          FIX 2: no min-h-0 / flex-1; items-start so columns don't stretch */}
+      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        {/* LEFT SIDEBAR
+            FIX 3: sticky with a max height instead of a full-height scroller */}
+        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           {/* OPERATIONS */}
           <Card>
             <CardHeader className="p-3 pb-2">
@@ -585,10 +588,12 @@ export function StackVisualizer() {
           </Alert>
         </aside>
 
-        {/* RIGHT CONTENT */}
-        <section className="grid min-h-0 min-w-0 grid-cols-1 gap-3 lg:grid-rows-2">
-          {/* VISUALIZATION PLAYGROUND */}
-          <Card className="flex min-h-[420px] min-w-0 flex-col overflow-hidden">
+        {/* RIGHT CONTENT
+            FIX 4: simple vertical flow, no grid-rows-2 height splitting */}
+        <section className="flex min-w-0 flex-col gap-3">
+          {/* VISUALIZATION PLAYGROUND
+              FIX 5: card sizes to its content */}
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
               <div>
                 <CardTitle className="text-base">
@@ -637,7 +642,7 @@ export function StackVisualizer() {
               </div>
             </CardHeader>
 
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
+            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
               {/* STATISTICS */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg border bg-muted/20 p-2">
@@ -668,8 +673,10 @@ export function StackVisualizer() {
                 </div>
               </div>
 
-              {/* STACK DIAGRAM */}
-              <div className="flex min-h-[170px] flex-1 flex-col overflow-hidden rounded-lg border bg-muted/10">
+              {/* STACK DIAGRAM
+                  FIX 6: fixed-height scroll area; m-auto on the child so
+                  tall stacks scroll instead of being clipped at the top */}
+              <div className="flex flex-col overflow-hidden rounded-lg border bg-muted/10">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-xs font-medium">Stack Structure</span>
                   <Badge variant="outline" className="text-[10px]">
@@ -677,9 +684,9 @@ export function StackVisualizer() {
                   </Badge>
                 </div>
 
-                <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+                <div className="flex h-[360px] overflow-auto p-4">
                   {stack.length === 0 ? (
-                    <div className="text-center">
+                    <div className="m-auto text-center">
                       <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
                         ∅
                       </div>
@@ -690,7 +697,7 @@ export function StackVisualizer() {
                     </div>
                   ) : (
                     <div
-                      className="flex min-w-max flex-col items-center py-3 transition-transform"
+                      className="m-auto flex min-w-max flex-col items-center px-3 py-3 transition-transform"
                       style={{ zoom }}
                     >
                       <Badge className="mb-2 bg-red-600 text-white hover:bg-red-600">
@@ -711,13 +718,13 @@ export function StackVisualizer() {
                           return (
                             <div
                               key={node.id}
-                              className={`relative flex h-14 min-w-36 items-center justify-between gap-5 border-2 px-4 transition-all ${
+                              className={`relative flex h-14 min-w-36 shrink-0 items-center justify-between gap-5 border-2 px-4 transition-all ${
                                 isTop ? "rounded-t-xl" : ""
                               } ${
                                 isBottom ? "rounded-b-xl" : ""
                               } ${
                                 isActive
-                                  ? "z-10 scale-105 border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
+                                  ? "z-10 border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
                                   : isTop
                                     ? "border-red-400 bg-red-50 text-red-800"
                                     : "border-border bg-card text-foreground"
@@ -765,7 +772,7 @@ export function StackVisualizer() {
                   {stack.length === 0 ? (
                     <span className="text-xs text-muted-foreground">[]</span>
                   ) : (
-                    stack.map((node, index) => (
+                    stack.map((node) => (
                       <div
                         key={node.id}
                         className={`rounded-md border px-3 py-1.5 font-mono text-xs ${
@@ -825,10 +832,11 @@ export function StackVisualizer() {
             </CardContent>
           </Card>
 
-          {/* BOTTOM HALF: PSEUDOCODE + COMPLEXITY */}
-          <div className="grid min-h-[420px] min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
+          {/* BOTTOM ROW: PSEUDOCODE + COMPLEXITY
+              FIX 8: no fixed min height; inner areas scroll with max-h */}
+          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
             {/* PSEUDOCODE */}
-            <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <Card className="flex min-w-0 flex-col overflow-hidden">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="text-sm">Pseudocode</CardTitle>
@@ -842,8 +850,8 @@ export function StackVisualizer() {
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
-                <div className="min-h-0 flex-1 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
+              <CardContent className="flex flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
+                <div className="max-h-[260px] overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
                   {selectedCode.lines.map((line, index) => (
                     <div
                       key={`${operation}-${index}`}
@@ -888,7 +896,7 @@ export function StackVisualizer() {
             </Card>
 
             {/* TIME COMPLEXITY */}
-            <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <Card className="flex min-w-0 flex-col overflow-hidden md:max-h-[560px]">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <CardTitle className="text-sm">Time Complexity</CardTitle>
                 <CardDescription className="text-xs">
@@ -896,7 +904,7 @@ export function StackVisualizer() {
                 </CardDescription>
               </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
+              <CardContent className="flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
                 <div className="space-y-2">
                   {complexityRows.map((item) => {
                     const isActive = item.key === operation;

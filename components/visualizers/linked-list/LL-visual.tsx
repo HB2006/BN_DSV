@@ -31,19 +31,17 @@ type Operation =
   | "traverse"
   | "clear";
 
-const pseudocode: Record<
-  Operation,
-  {
-    title: string;
-    lines: string[];
-    explanation: string[];
-    complexity: string;
-  }
-> = {
+type CodeInfo = {
+  title: string;
+  lines: string[];
+  explanation: string[];
+  complexity: string;
+};
+
+const pseudocode: Record<Operation, CodeInfo> = {
   "insert-head": {
     title: "Insert at Head",
     lines: [
-      "// Insert a new node at the beginning",
       "newNode = Node(value)",
       "newNode.next = head",
       "head = newNode",
@@ -61,7 +59,6 @@ const pseudocode: Record<
   "insert-tail": {
     title: "Insert at Tail",
     lines: [
-      "// Add a node at the end",
       "newNode = Node(value)",
       "if head == null:",
       "    head = newNode",
@@ -74,8 +71,8 @@ const pseudocode: Record<
     ],
     explanation: [
       "Create a new node.",
-      "If the list is empty, make it the head.",
-      "Otherwise, traverse to the last node.",
+      "If the list is empty, make the new node the head.",
+      "Otherwise, traverse until the last node.",
       "Connect the last node to the new node.",
       "Increase the list size.",
     ],
@@ -85,7 +82,6 @@ const pseudocode: Record<
   "insert-position": {
     title: "Insert at Index",
     lines: [
-      "// Insert at a zero-based index",
       "newNode = Node(value)",
       "if index == 0:",
       "    newNode.next = head",
@@ -99,9 +95,9 @@ const pseudocode: Record<
       "size = size + 1",
     ],
     explanation: [
-      "Create the new node.",
-      "If index is zero, insert before the head.",
-      "Find the node before the target position.",
+      "Create a new node.",
+      "If the index is zero, insert before the head.",
+      "Find the node immediately before the target index.",
       "Point the new node to the following node.",
       "Connect the previous node to the new node.",
     ],
@@ -111,7 +107,6 @@ const pseudocode: Record<
   "delete-value": {
     title: "Delete by Value",
     lines: [
-      "// Delete the first matching value",
       "if head == null: return",
       "if head.value == value:",
       "    head = head.next",
@@ -122,14 +117,13 @@ const pseudocode: Record<
       "            current.next = current.next.next",
       "            break",
       "        current = current.next",
-      "size = size - 1",
     ],
     explanation: [
       "Check whether the list is empty.",
-      "If the head matches, move head forward.",
-      "Otherwise, find the matching node.",
-      "Update the previous node's pointer to skip it.",
-      "Decrease the size when a node is deleted.",
+      "If the head matches, move head to the next node.",
+      "Otherwise, search for the first matching node.",
+      "Update the previous node's pointer to skip the target.",
+      "Only the first occurrence is deleted.",
     ],
     complexity: "O(n)",
   },
@@ -137,7 +131,6 @@ const pseudocode: Record<
   search: {
     title: "Search",
     lines: [
-      "// Find the first matching value",
       "current = head",
       "index = 0",
       "while current != null:",
@@ -148,9 +141,9 @@ const pseudocode: Record<
       "return -1",
     ],
     explanation: [
-      "Start at the head.",
-      "Track the current index.",
-      "Compare each node with the target.",
+      "Start at the head of the list.",
+      "Track the index of the current node.",
+      "Compare each node's value with the target.",
       "Return the index when a match is found.",
       "Return -1 if the value is absent.",
     ],
@@ -158,9 +151,8 @@ const pseudocode: Record<
   },
 
   traverse: {
-    title: "Traverse",
+    title: "Traverse Linked List",
     lines: [
-      "// Visit every node",
       "current = head",
       "while current != null:",
       "    visit(current.value)",
@@ -170,18 +162,22 @@ const pseudocode: Record<
     explanation: [
       "Start at the head.",
       "Visit the current node.",
-      "Move to the next node.",
-      "Stop when the pointer reaches null.",
+      "Follow the next pointer.",
+      "Stop when current becomes null.",
     ],
     complexity: "O(n)",
   },
 
   clear: {
-    title: "Clear List",
-    lines: ["// Remove all nodes", "head = null", "size = 0", "return"],
+    title: "Clear Linked List",
+    lines: [
+      "head = null",
+      "size = 0",
+      "return",
+    ],
     explanation: [
       "Set the head pointer to null.",
-      "Reset the size to zero.",
+      "Reset the list size to zero.",
       "The list is now empty.",
     ],
     complexity: "O(1)",
@@ -192,22 +188,22 @@ const complexityRows = [
   {
     operation: "Insert at Head",
     time: "O(1)",
-    why: "Update the head pointer directly.",
+    why: "Updates the head pointer directly.",
   },
   {
     operation: "Insert at Tail",
     time: "O(n)",
-    why: "Traverse to the last node.",
+    why: "Traverses to the last node.",
   },
   {
     operation: "Insert at Index",
     time: "O(n)",
-    why: "Find the insertion position.",
+    why: "Finds the insertion position.",
   },
   {
     operation: "Delete by Value",
     time: "O(n)",
-    why: "Find the target node.",
+    why: "Searches for the target node.",
   },
   {
     operation: "Search",
@@ -217,12 +213,12 @@ const complexityRows = [
   {
     operation: "Traverse",
     time: "O(n)",
-    why: "Visit each node once.",
+    why: "Visits every node once.",
   },
   {
     operation: "Clear List",
     time: "O(1)",
-    why: "Reset the head pointer and size.",
+    why: "Resets the head reference.",
   },
 ];
 
@@ -232,8 +228,8 @@ const primaryButton =
 const secondaryButton =
   "h-7 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
 
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 2;
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 1.6;
 const ZOOM_STEP = 0.1;
 
 export function LinkedListVisualizer() {
@@ -249,7 +245,9 @@ export function LinkedListVisualizer() {
   const [activeNode, setActiveNode] = useState<number | null>(null);
   const [operation, setOperation] = useState<Operation>("insert-head");
   const [activeLine, setActiveLine] = useState<number | null>(null);
-  const [message, setMessage] = useState("Choose an operation to get started.");
+  const [message, setMessage] = useState(
+    "Choose an operation to get started."
+  );
   const [history, setHistory] = useState<string[]>([]);
   const [traversal, setTraversal] = useState<number[] | null>(null);
   const [randomCount, setRandomCount] = useState("5");
@@ -260,15 +258,15 @@ export function LinkedListVisualizer() {
   const selectedCode = pseudocode[operation];
 
   function zoomIn() {
-    setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10));
+    setZoom((z) =>
+      Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10)
+    );
   }
 
   function zoomOut() {
-    setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10));
-  }
-
-  function resetZoom() {
-    setZoom(1);
+    setZoom((z) =>
+      Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10)
+    );
   }
 
   function record(text: string) {
@@ -295,6 +293,7 @@ export function LinkedListVisualizer() {
     setActiveNode(nextId);
     setList((old) => insertHead(old, n, nextId));
     setNextId((old) => old + 1);
+
     record(`Inserted ${n} at the head.`);
   }
 
@@ -303,10 +302,11 @@ export function LinkedListVisualizer() {
     if (n === null) return;
 
     setOperation("insert-tail");
-    setActiveLine(8);
+    setActiveLine(7);
     setActiveNode(nextId);
     setList((old) => insertTail(old, n, nextId));
     setNextId((old) => old + 1);
+
     record(`Inserted ${n} at the tail.`);
   }
 
@@ -328,13 +328,16 @@ export function LinkedListVisualizer() {
 
     try {
       setOperation("insert-position");
-      setActiveLine(index === 0 ? 4 : 10);
+      setActiveLine(index === 0 ? 3 : 9);
       setActiveNode(nextId);
       setList((old) => insertAtPosition(old, n, index, nextId));
       setNextId((old) => old + 1);
+
       record(`Inserted ${n} at index ${index}.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Insertion failed.");
+      setMessage(
+        error instanceof Error ? error.message : "Insertion failed."
+      );
     }
   }
 
@@ -348,14 +351,15 @@ export function LinkedListVisualizer() {
 
     if (!match) {
       setActiveNode(null);
-      setActiveLine(8);
+      setActiveLine(0);
       setMessage(`Value ${n} was not found.`);
       return;
     }
 
     setActiveNode(match.id);
-    setActiveLine(9);
+    setActiveLine(7);
     setList((old) => deleteValue(old, n));
+
     record(`Deleted the first occurrence of ${n}.`);
   }
 
@@ -366,30 +370,39 @@ export function LinkedListVisualizer() {
     setOperation("search");
 
     const index = searchValue(list, n);
-    setActiveLine(index === -1 ? 8 : 5);
+
+    setActiveLine(index === -1 ? 7 : 4);
     setActiveNode(index === -1 ? null : list[index].id);
     setTraversal(null);
 
     setMessage(
-      index === -1 ? `Value ${n} was not found.` : `Found ${n} at index ${index}.`
+      index === -1
+        ? `Value ${n} was not found.`
+        : `Found ${n} at index ${index}.`
     );
   }
 
   function traverse() {
     setOperation("traverse");
-    setActiveLine(3);
+    setActiveLine(2);
     setActiveNode(null);
+
     setTraversal(list.map((node) => node.value));
-    setMessage(`Traversed ${list.length} node(s).`);
+    setMessage(
+      list.length
+        ? `Traversed ${list.length} node(s).`
+        : "The list is empty."
+    );
   }
 
   function clearList() {
     setOperation("clear");
-    setActiveLine(1);
+    setActiveLine(0);
     setActiveNode(null);
     setList([]);
     setTraversal(null);
-    record("Cleared the list.");
+
+    record("Cleared the linked list.");
   }
 
   function generateRandom() {
@@ -405,14 +418,19 @@ export function LinkedListVisualizer() {
       !Number.isInteger(max) ||
       min > max
     ) {
-      setMessage("Use 1–30 nodes and valid integer minimum/maximum values.");
+      setMessage(
+        "Use 1–30 nodes and valid integer minimum/maximum values."
+      );
       return;
     }
 
-    const generated: ListNode[] = Array.from({ length: count }, (_, index) => ({
-      id: nextId + index,
-      value: Math.floor(Math.random() * (max - min + 1)) + min,
-    }));
+    const generated: ListNode[] = Array.from(
+      { length: count },
+      (_, index) => ({
+        id: nextId + index,
+        value: Math.floor(Math.random() * (max - min + 1)) + min,
+      })
+    );
 
     setList(generated);
     setNextId((old) => old + count);
@@ -420,12 +438,12 @@ export function LinkedListVisualizer() {
     setActiveLine(null);
     setActiveNode(null);
     setTraversal(null);
-    record(`Generated ${count} random nodes.`);
+
+    record(`Generated a linked list with ${count} random nodes.`);
   }
 
   return (
     <main className="flex min-h-screen flex-col bg-background text-foreground lg:h-screen lg:overflow-hidden">
-      {/* PAGE HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -444,11 +462,8 @@ export function LinkedListVisualizer() {
         </Badge>
       </header>
 
-      {/* BODY: LEFT SIDEBAR + RIGHT (TOP HALF / BOTTOM HALF) */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
-        {/* ===== FAR-LEFT COMPACT SIDEBAR ===== */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:overflow-hidden">
         <aside className="min-h-0 min-w-0 space-y-3 lg:overflow-y-auto lg:pr-1">
-          {/* OPERATIONS */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="border-b border-border px-3 py-2">
               <CardTitle className="text-sm">Operations</CardTitle>
@@ -471,10 +486,7 @@ export function LinkedListVisualizer() {
 
               <div className="space-y-1">
                 <label htmlFor="ll-position" className="text-xs font-medium">
-                  Index{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (0–{list.length})
-                  </span>
+                  Index (0–{list.length})
                 </label>
                 <Input
                   id="ll-position"
@@ -509,7 +521,7 @@ export function LinkedListVisualizer() {
                 </Button>
                 <Button
                   onClick={clearList}
-                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950"
+                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                   variant="outline"
                 >
                   Clear List
@@ -518,7 +530,6 @@ export function LinkedListVisualizer() {
             </CardContent>
           </Card>
 
-          {/* RANDOM NODE GENERATOR */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="px-3 pb-1 pt-3">
               <CardTitle className="text-sm">Random Nodes</CardTitle>
@@ -527,7 +538,7 @@ export function LinkedListVisualizer() {
             <CardContent className="space-y-2 px-3 pb-3">
               <div className="space-y-1">
                 <label htmlFor="ll-count" className="text-[11px] font-medium text-muted-foreground">
-                  Number of nodes
+                  Number of nodes (1–30)
                 </label>
                 <Input
                   id="ll-count"
@@ -543,7 +554,7 @@ export function LinkedListVisualizer() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="min-w-0 space-y-1">
                   <label htmlFor="ll-min" className="text-[11px] font-medium text-muted-foreground">
-                    Min
+                    Minimum
                   </label>
                   <Input
                     id="ll-min"
@@ -556,7 +567,7 @@ export function LinkedListVisualizer() {
 
                 <div className="min-w-0 space-y-1">
                   <label htmlFor="ll-max" className="text-[11px] font-medium text-muted-foreground">
-                    Max
+                    Maximum
                   </label>
                   <Input
                     id="ll-max"
@@ -577,7 +588,6 @@ export function LinkedListVisualizer() {
             </CardContent>
           </Card>
 
-          {/* HISTORY */}
           <Card className="border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
               <CardTitle className="text-sm">History</CardTitle>
@@ -612,32 +622,28 @@ export function LinkedListVisualizer() {
             </CardContent>
           </Card>
 
-          {/* STATUS */}
           <Alert className="border-red-200 bg-red-50 px-3 py-2 text-red-950 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100">
             <AlertDescription className="text-[11px] leading-snug">
               <span className="font-semibold text-red-700 dark:text-red-300">
-                Status:
-              </span>{" "}
+                Status:{" "}
+              </span>
               {message}
             </AlertDescription>
           </Alert>
         </aside>
 
-        {/* ===== RIGHT SIDE: TWO HORIZONTAL HALVES ===== */}
         <div className="grid min-h-0 min-w-0 grid-rows-[minmax(380px,1fr)_minmax(380px,1fr)] gap-3 lg:grid-rows-2">
-          {/* ---------- UPPER HALF: VISUALIZATION PLAYGROUND ---------- */}
           <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-3 border-b border-border px-4 py-2.5">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-2.5">
               <div className="min-w-0">
                 <CardTitle className="text-base">
                   Visualization Playground
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Follow the arrows to see each node&apos;s next pointer.
+                  Follow the arrows to understand each node&apos;s next pointer.
                 </CardDescription>
               </div>
 
-              {/* ZOOM CONTROLS */}
               <div className="flex shrink-0 items-center gap-1">
                 <Button
                   variant="outline"
@@ -649,14 +655,16 @@ export function LinkedListVisualizer() {
                 >
                   −
                 </Button>
+
                 <button
                   type="button"
-                  onClick={resetZoom}
+                  onClick={() => setZoom(1)}
                   title="Reset zoom"
                   className="h-7 min-w-[3.25rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
                 >
                   {Math.round(zoom * 100)}%
                 </button>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -671,30 +679,28 @@ export function LinkedListVisualizer() {
             </CardHeader>
 
             <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-              {/* LIST STATISTICS */}
               <div className="grid shrink-0 grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
                 <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Head value</p>
+                  <p className="text-[11px] text-muted-foreground">Head</p>
                   <p className="break-words text-base font-bold">
-                    {list.length ? list[0].value : "null"}
+                    {list.length ? list[0].value : "NULL"}
                   </p>
                 </div>
                 <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Size</p>
+                  <p className="text-[11px] text-muted-foreground">Nodes</p>
                   <p className="text-base font-bold">{list.length}</p>
                 </div>
                 <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Tail value</p>
+                  <p className="text-[11px] text-muted-foreground">Tail</p>
                   <p className="break-words text-base font-bold">
-                    {list.length ? list[list.length - 1].value : "null"}
+                    {list.length ? list[list.length - 1].value : "NULL"}
                   </p>
                 </div>
               </div>
 
-              {/* LINKED LIST DIAGRAM (zoomable, scrollable) */}
-              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-muted/20 p-4">
+              <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-muted/20 p-3">
                 {list.length === 0 ? (
-                  <div className="flex h-full w-full flex-col items-center justify-center text-center">
+                  <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
                     <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600 dark:bg-red-950/50">
                       ∅
                     </div>
@@ -704,15 +710,15 @@ export function LinkedListVisualizer() {
                     </p>
                   </div>
                 ) : (
-                  <div
-                    className="flex min-h-full w-max items-center"
-                    style={{ zoom }}
-                  >
-                    <div className="flex min-w-max items-center py-4">
-                      <div className="mr-3 flex flex-col items-center gap-3">
+                  <div className="flex min-h-full min-w-full items-center justify-center">
+                    <div
+                      className="flex min-w-max items-center py-8"
+                      style={{ zoom }}
+                    >
+                      <div className="mr-3 flex flex-col items-center gap-2">
                         <Badge
                           variant="outline"
-                          className="border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                          className="border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                         >
                           HEAD
                         </Badge>
@@ -725,14 +731,14 @@ export function LinkedListVisualizer() {
                         return (
                           <div key={node.id} className="flex items-center">
                             <div
-                              className={`relative flex h-32 w-28 flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 ${
+                              className={`relative flex h-24 w-24 flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 ${
                                 highlighted
                                   ? "z-10 scale-105 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
                                   : "border-border bg-card text-card-foreground"
                               }`}
                             >
                               <span
-                                className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-xs font-bold ${
+                                className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-bold ${
                                   highlighted
                                     ? "bg-red-600 text-white"
                                     : "bg-muted text-muted-foreground"
@@ -742,29 +748,31 @@ export function LinkedListVisualizer() {
                               </span>
 
                               {highlighted && (
-                                <span className="absolute -top-3 right-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                <span className="absolute -top-3 right-1 rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
                                   ACTIVE
                                 </span>
                               )}
 
-                              <span className="max-w-full break-all px-1 text-2xl font-bold">
+                              <span className="max-w-full break-all px-1 text-xl font-bold">
                                 {node.value}
                               </span>
 
-                              <div className="mt-3 flex w-full items-center justify-between px-3 text-xs text-muted-foreground">
+                              <div className="mt-2 flex w-full items-center justify-between border-t border-border px-2 pt-1 text-[10px] text-muted-foreground">
                                 <span>next</span>
                                 <span
-                                  className={`h-3 w-3 rounded-full ${
-                                    highlighted ? "bg-red-600" : "bg-foreground"
+                                  className={`h-2.5 w-2.5 rounded-full ${
+                                    highlighted
+                                      ? "bg-red-600"
+                                      : "bg-foreground"
                                   }`}
                                 />
                               </div>
                             </div>
 
                             {index < list.length - 1 ? (
-                              <div className="flex w-10 items-center justify-center sm:w-12">
+                              <div className="flex w-8 items-center justify-center sm:w-10">
                                 <span
-                                  className={`text-3xl transition-colors duration-300 ${
+                                  className={`text-2xl transition-colors duration-300 ${
                                     highlighted ||
                                     activeNode === list[index + 1].id
                                       ? "text-red-600"
@@ -775,8 +783,8 @@ export function LinkedListVisualizer() {
                                 </span>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-2 px-3">
-                                <span className="text-2xl text-muted-foreground">
+                              <div className="flex items-center gap-2 px-2">
+                                <span className="text-xl text-muted-foreground">
                                   →
                                 </span>
                                 <Badge
@@ -795,38 +803,35 @@ export function LinkedListVisualizer() {
                 )}
               </div>
 
-              {/* TRAVERSAL OUTPUT */}
               <div className="shrink-0 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold">Traversal Output</p>
                   <Badge variant="outline" className="text-[11px]">
-                    {selectedCode.complexity}
+                    {traversal?.length ?? 0} values
                   </Badge>
                 </div>
 
                 <p className="max-h-14 overflow-auto break-words rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-xs">
                   {traversal !== null
                     ? traversal.length
-                      ? traversal.join(" → ") + " → NULL"
+                      ? `${traversal.join(" → ")} → NULL`
                       : "NULL"
                     : list.length
-                      ? list.map((node) => node.value).join(" → ") + " → NULL"
+                      ? `${list.map((node) => node.value).join(" → ")} → NULL`
                       : "NULL"}
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* ---------- LOWER HALF: PSEUDOCODE + COMPLEXITY ---------- */}
           <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-            {/* PSEUDOCODE */}
             <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
               <CardHeader className="border-b border-border px-4 py-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">Pseudocode</CardTitle>
                   <Badge
                     variant="outline"
-                    className="border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                    className="max-w-[65%] truncate border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                   >
                     {selectedCode.title}
                   </Badge>
@@ -834,7 +839,6 @@ export function LinkedListVisualizer() {
               </CardHeader>
 
               <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                {/* DARK CODE PANEL */}
                 <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-slate-100 shadow-inner">
                   <div className="min-w-max space-y-0.5 font-mono">
                     {selectedCode.lines.map((line, index) => (
@@ -849,14 +853,15 @@ export function LinkedListVisualizer() {
                         <span className="w-5 shrink-0 select-none text-right text-slate-500">
                           {activeLine === index ? "▶" : index + 1}
                         </span>
-
                         <span
                           className={
                             line.trim().startsWith("//")
                               ? "text-emerald-300"
                               : line.includes("return")
                                 ? "text-pink-300"
-                                : line.includes("if ") || line.includes("while ")
+                                : line.includes("if ") ||
+                                    line.includes("while ") ||
+                                    line.includes("repeat ")
                                   ? "text-amber-200"
                                   : "text-sky-100"
                           }
@@ -868,13 +873,11 @@ export function LinkedListVisualizer() {
                   </div>
                 </div>
 
-                {/* EXPLANATION */}
                 <div className="rounded-xl border border-border bg-muted/30 p-3">
                   <h3 className="mb-2 text-sm font-semibold text-red-700 dark:text-red-300">
                     How it works
                   </h3>
-
-                  <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-foreground">
+                  <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed">
                     {selectedCode.explanation.map((step, index) => (
                       <li key={`${operation}-step-${index}`}>{step}</li>
                     ))}
@@ -883,19 +886,17 @@ export function LinkedListVisualizer() {
               </CardContent>
             </Card>
 
-            {/* COMPLEXITY */}
             <Card className="flex min-h-0 min-w-0 flex-col border-border bg-card shadow-sm">
               <CardHeader className="border-b border-border px-4 py-2.5">
                 <CardTitle className="text-base">Time Complexity</CardTitle>
                 <CardDescription className="text-xs">
-                  Selected operation and all common operations.
+                  Selected operation and common linked-list operations.
                 </CardDescription>
               </CardHeader>
 
               <CardContent className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                {/* SELECTED OPERATION COMPLEXITY */}
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">
                       {selectedCode.title}
                     </p>
@@ -910,17 +911,17 @@ export function LinkedListVisualizer() {
                   </p>
                 </div>
 
-                {/* TABLE */}
                 <div className="overflow-x-auto rounded-xl border border-border">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
                       <tr className="bg-muted/60">
-                        <th className="border-b border-border p-2">Operation</th>
+                        <th className="border-b border-border p-2">
+                          Operation
+                        </th>
                         <th className="border-b border-border p-2">Time</th>
                         <th className="border-b border-border p-2">Why?</th>
                       </tr>
                     </thead>
-
                     <tbody>
                       {complexityRows.map((row) => (
                         <tr
@@ -930,20 +931,18 @@ export function LinkedListVisualizer() {
                           <td className="border-b border-border p-2 font-medium">
                             {row.operation}
                           </td>
-
                           <td className="border-b border-border p-2">
                             <Badge
                               variant="outline"
                               className={
                                 row.time === "O(1)"
-                                  ? "border-green-300 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300"
+                                  ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
                                   : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                               }
                             >
                               {row.time}
                             </Badge>
                           </td>
-
                           <td className="border-b border-border p-2 text-muted-foreground">
                             {row.why}
                           </td>
@@ -953,16 +952,11 @@ export function LinkedListVisualizer() {
                   </table>
                 </div>
 
-                <div className="flex flex-wrap gap-4 text-[11px] text-muted-foreground">
-                  <span>
-                    <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-green-600" />
-                    O(1): Constant time
-                  </span>
-                  <span>
-                    <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-red-600" />
-                    O(n): Linear time
-                  </span>
-                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Here, <strong>n</strong> is the number of nodes. In a singly
+                  linked list, inserting at the head takes O(1), while
+                  operations that need to find a node generally take O(n).
+                </p>
               </CardContent>
             </Card>
           </div>
