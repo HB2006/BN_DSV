@@ -649,10 +649,10 @@ export function StackVisualizer() {
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
             Stack Visualizer
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground  text-white">
             Explore LIFO operations through an interactive stack.
           </p>
         </div>
@@ -690,70 +690,47 @@ export function StackVisualizer() {
                   className="h-8 text-sm"
                 />
               </div>
-              <Button
-                onClick={handlePush}
-                className={`h-8 w-full text-xs ${primaryButton}`}
-              >
-                + Push
-              </Button>
-              <Button
-                onClick={handlePop}
-                variant="outline"
-                className="h-8 w-full text-xs"
-              >
-                − Pop
-              </Button>
-              <Button
-                onClick={handlePeek}
-                variant="outline"
-                className="h-8 w-full text-xs"
-              >
-                Peek Top
-              </Button>
-              <Button
-                onClick={handleSearch}
-                variant="outline"
-                className="h-8 w-full text-xs"
-              >
-                Search Value
-              </Button>
-              <Button
-                onClick={handleTraverse}
-                variant="outline"
-                className="h-8 w-full text-xs"
-              >
-                Traverse Stack
-              </Button>
-              <Button
-                onClick={handleClear}
-                variant="outline"
-                className="h-8 w-full border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-              >
-                Clear Stack
-              </Button>
-            </CardContent>
-          </Card>
+<Button
+  onClick={handlePush}
+  className={`h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90`}
+>
+  + Push
+</Button>
 
-          {/* RANDOM GENERATOR */}
-          <Card>
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-sm">Random Nodes</CardTitle>
-              <CardDescription className="text-xs">
-                Generate sample elements
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 p-3 pt-1">
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Node count</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={randomCount}
-                  onChange={(e) => setRandomCount(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
+<Button
+  onClick={handlePop}
+  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
+>
+  − Pop
+</Button>
+
+<Button
+  onClick={handlePeek}
+  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
+>
+  Peek Top
+</Button>
+
+<Button
+  onClick={handleSearch}
+  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
+>
+  Search Value
+</Button>
+
+<Button
+  onClick={handleTraverse}
+  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
+>
+  Traverse Stack
+</Button>
+
+<Button
+  onClick={handleClear}
+  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
+>
+  Clear Stack
+</Button>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Minimum</label>

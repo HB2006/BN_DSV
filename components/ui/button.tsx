@@ -9,16 +9,31 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // Peach primary buttons
+        default:
+          "bg-[#F7B08A] text-black hover:bg-[#F0A078] border border-[#F7B08A]",
+
+        // Coral-peach destructive buttons
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "bg-[#E76F51] text-black hover:bg-[#D95F43] border border-[#E76F51]",
+
+        // Cream outline buttons with teal borders
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+          "border border-[#0F6B6D] bg-[#FFF4E8] text-black hover:bg-[#E8F0E8]",
+
+        // Coral-peach secondary buttons
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-[#E76F51] text-black hover:bg-[#D95F43]",
+
+        // Ghost buttons: transparent until hovered
+        ghost:
+          "text-black hover:bg-[#F7B08A] hover:text-black",
+
+        // Text-only links
+        link:
+          "text-[#0F6B6D] underline-offset-4 hover:underline",
       },
+
       size: {
         default: "h-10 px-4 py-2",
         sm: "h-9 rounded-md px-3",
@@ -26,6 +41,7 @@ const buttonVariants = cva(
         icon: "h-10 w-10",
       },
     },
+
     defaultVariants: {
       variant: "default",
       size: "default",
@@ -42,6 +58,7 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
+
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
@@ -51,6 +68,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     )
   }
 )
+
 Button.displayName = "Button"
 
 export { Button, buttonVariants }

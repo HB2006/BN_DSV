@@ -758,10 +758,10 @@ export function HeapVisualizer() {
       {/* PAGE HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
             Min-Heap Visualizer
           </h1>
-          <p className="text-xs text-muted-foreground sm:text-sm">
+          <p className="text-xs text-muted-foreground sm:text-sm text-white">
             Explore heap operations, array indices, pseudocode, and complexity.
           </p>
         </div>

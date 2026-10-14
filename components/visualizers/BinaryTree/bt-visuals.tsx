@@ -1076,11 +1076,11 @@ export function BinaryTreeVisualizer() {
 
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
             Binary Tree Visualizer
           </h1>
 
-          <p className="text-xs text-muted-foreground sm:text-sm">
+          <p className="text-xs text-muted-foreground sm:text-sm text-white">
             Explore BST operations, traversals, pseudocode, and complexity.
           </p>
         </div>
