@@ -159,7 +159,11 @@ const complexityRows = [
 ];
 
 const primaryButton =
-  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
+  "bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500";
+
+// Coral peach style for the Play / Pause / Undo / Redo buttons
+const coralButton =
+  "border-[#FF9E80] bg-[#FFAB91] text-[#0B4A47] hover:bg-[#FF9E80] hover:text-[#0B4A47] dark:border-[#FF9E80] dark:bg-[#FFAB91] dark:text-[#0B4A47] dark:hover:bg-[#FF9E80]";
 
 const MAX_HISTORY = 50;
 
@@ -649,10 +653,10 @@ export function StackVisualizer() {
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
             Stack Visualizer
           </h1>
-          <p className="text-sm text-muted-foreground  text-white">
+          <p className="text-sm text-muted-foreground">
             Explore LIFO operations through an interactive stack.
           </p>
         </div>
@@ -690,47 +694,70 @@ export function StackVisualizer() {
                   className="h-8 text-sm"
                 />
               </div>
-<Button
-  onClick={handlePush}
-  className={`h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90`}
->
-  + Push
-</Button>
+              <Button
+                onClick={handlePush}
+                className={`h-8 w-full text-xs ${primaryButton}`}
+              >
+                + Push
+              </Button>
+              <Button
+                onClick={handlePop}
+                variant="outline"
+                className="h-8 w-full text-xs"
+              >
+                − Pop
+              </Button>
+              <Button
+                onClick={handlePeek}
+                variant="outline"
+                className="h-8 w-full text-xs"
+              >
+                Peek Top
+              </Button>
+              <Button
+                onClick={handleSearch}
+                variant="outline"
+                className="h-8 w-full text-xs"
+              >
+                Search Value
+              </Button>
+              <Button
+                onClick={handleTraverse}
+                variant="outline"
+                className="h-8 w-full text-xs"
+              >
+                Traverse Stack
+              </Button>
+              <Button
+                onClick={handleClear}
+                variant="outline"
+                className="h-8 w-full border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                Clear Stack
+              </Button>
+            </CardContent>
+          </Card>
 
-<Button
-  onClick={handlePop}
-  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
->
-  − Pop
-</Button>
-
-<Button
-  onClick={handlePeek}
-  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
->
-  Peek Top
-</Button>
-
-<Button
-  onClick={handleSearch}
-  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
->
-  Search Value
-</Button>
-
-<Button
-  onClick={handleTraverse}
-  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
->
-  Traverse Stack
-</Button>
-
-<Button
-  onClick={handleClear}
-  className="h-8 w-full text-xs bg-secondary text-white hover:bg-secondary/90"
->
-  Clear Stack
-</Button>
+          {/* RANDOM GENERATOR */}
+          <Card>
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-sm">Random Nodes</CardTitle>
+              <CardDescription className="text-xs">
+                Generate sample elements
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 p-3 pt-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Node count</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={randomCount}
+                  onChange={(e) => setRandomCount(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Minimum</label>
@@ -821,7 +848,7 @@ export function StackVisualizer() {
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
               <div>
                 <CardTitle className="text-base">
-                  Visualization Playground
+                  Learn, Play and Create
                 </CardTitle>
                 <CardDescription className="text-xs">
                   Watch elements move in and out of the stack.
@@ -869,9 +896,10 @@ export function StackVisualizer() {
                   <Button
                     type="button"
                     size="sm"
+                    variant="outline"
                     onClick={handlePlay}
                     disabled={isPlaying}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Play className="h-4 w-4" /> Play
                   </Button>
@@ -881,7 +909,7 @@ export function StackVisualizer() {
                     variant="outline"
                     onClick={handlePause}
                     disabled={!isPlaying}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Pause className="h-4 w-4" /> Pause
                   </Button>
@@ -891,7 +919,7 @@ export function StackVisualizer() {
                     variant="outline"
                     onClick={handleUndo}
                     disabled={undoStack.length === 0}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Undo2 className="h-4 w-4" /> Undo
                   </Button>
@@ -901,7 +929,7 @@ export function StackVisualizer() {
                     variant="outline"
                     onClick={handleRedo}
                     disabled={redoStack.length === 0}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Redo2 className="h-4 w-4" /> Redo
                   </Button>
@@ -1145,7 +1173,7 @@ export function StackVisualizer() {
                       key={`${operation}-${index}`}
                       className={`flex min-w-max gap-3 rounded px-2 py-1 ${
                         activeLine === index
-                          ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
+                          ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
                           : ""
                       }`}
                     >

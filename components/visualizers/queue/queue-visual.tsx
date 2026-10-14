@@ -37,7 +37,9 @@ type HistoryEntry = {
   traversal: string[] | null;
   line: number;
 };
-
+// Coral peach style for the Play / Pause / Undo / Redo buttons
+const coralButton =
+  "border-[#FF9E80] bg-[#FFAB91] text-[#0B4A47] hover:bg-[#FF9E80] hover:text-[#0B4A47] dark:border-[#FF9E80] dark:bg-[#FFAB91] dark:text-[#0B4A47] dark:hover:bg-[#FF9E80]";
 type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
 
 type Step = { line: number | null; run: () => void };
@@ -963,7 +965,7 @@ export default function QueueVisualizer() {
                     size="sm"
                     onClick={handlePlay}
                     disabled={isPlaying}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Play className="h-4 w-4" /> Play
                   </Button>
@@ -973,7 +975,7 @@ export default function QueueVisualizer() {
                     variant="outline"
                     onClick={handlePause}
                     disabled={!isPlaying}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Pause className="h-4 w-4" /> Pause
                   </Button>
@@ -983,7 +985,7 @@ export default function QueueVisualizer() {
                     variant="outline"
                     onClick={handleUndo}
                     disabled={undoStack.length === 0}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Undo2 className="h-4 w-4" /> Undo
                   </Button>
@@ -993,7 +995,7 @@ export default function QueueVisualizer() {
                     variant="outline"
                     onClick={handleRedo}
                     disabled={redoStack.length === 0}
-                    className="gap-2"
+                    className={`gap-2 ${coralButton}`}
                   >
                     <Redo2 className="h-4 w-4" /> Redo
                   </Button>
