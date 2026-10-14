@@ -830,10 +830,10 @@ export function HeapVisualizer() {
         {/* PAGE HEADER */}
         <header className="flex flex-wrap items-center justify-between gap-3 border-b py-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D]">
-              Min-Heap Visualizer
+            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D] dark:text-[#FFAB91] ">
+              Priority Queues
             </h1>
-            <p className="text-xs text-[#0F6B6D]">
+            <p className="text-xs text-[#0F6B6D] dark:text-white">
               Explore heap operations, array indices, pseudocode, and
               complexity.
             </p>
@@ -1471,10 +1471,10 @@ export function HeapVisualizer() {
                       return (
                         <div
                           key={row.operation}
-                          className={`rounded-xl border p-4 transition-colors ${
+                          className={`rounded-lg border p-3 transition-colors ${
                             isActive
-                              ? "border-red-300 bg-red-50"
-                              : "border-[#BFD8D8] bg-card"
+                              ? "border-red-300 bg-red-50/70 dark:border-[#FFAB91]/60 dark:bg-[#FFAB91]/10"
+                              : "bg-card"
                           }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1483,11 +1483,10 @@ export function HeapVisualizer() {
                             </p>
 
                             <Badge
-                              variant="outline"
-                              className={`rounded-full font-mono text-[10px] ${
+                              className={`font-mono text-[10px] ${
                                 isActive
-                                  ? "border-red-300 text-red-600"
-                                  : "border-[#BFD8D8]"
+                                  ? "border-red-300 text-[#FBB917] dark:border-[#FFAB91] dark:text-[#000000]"
+                                  : ""
                               }`}
                             >
                               {row.time}
