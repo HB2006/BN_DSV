@@ -52,7 +52,7 @@ type HistoryEntry = {
   after: TreeNode | null;
   activeId: number | null;
   traversal: number[] | null;
-  path?: number[] | null; // node ids in visit order (traversals only)
+  path?: number[] | null;
   line: number | null;
 };
 
@@ -240,7 +240,7 @@ const primaryButton =
   "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]";
 
 const secondaryButton =
-  "h-7 w-full justify-start border border-border bg-card px-2 text-[11px] text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
+  "h-7 w-full justify-start border border-[#0F6B6D] bg-[#0F6B6D] px-2 text-[11px] text-white hover:border-[#0B5557] hover:bg-[#0B5557]";
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
@@ -336,7 +336,6 @@ function collectIds(root: TreeNode | null, out: number[] = []): number[] {
 
 type TraversalOrder = "inorder" | "preorder" | "postorder" | "levelorder";
 
-// Returns the nodes in the order they are visited.
 function treeVisit(root: TreeNode | null, order: TraversalOrder): TreeNode[] {
   const result: TreeNode[] = [];
 
@@ -382,7 +381,6 @@ function treeVisit(root: TreeNode | null, order: TraversalOrder): TreeNode[] {
   return result;
 }
 
-// Pseudocode line (per traversal) that is highlighted when a node is visited.
 const VISIT_LINE: Record<TraversalOrder, number> = {
   inorder: 3,
   preorder: 2,
@@ -473,14 +471,11 @@ export function BinaryTreeVisualizer() {
   const [maxValue, setMaxValue] = useState("100");
   const [zoom, setZoom] = useState(1);
 
-  // Playback + undo/redo state
   const [isPlaying, setIsPlaying] = useState(false);
   const [animationSpeed, setAnimationSpeed] = useState("1");
   const [undoStack, setUndoStack] = useState<(TreeNode | null)[]>([]);
   const [redoStack, setRedoStack] = useState<(TreeNode | null)[]>([]);
 
-  // Keep the sticky sidebar just below the app's fixed/sticky header so the two
-  // never overlap, whatever height that header has.
   const [stickyTop, setStickyTop] = useState(80);
 
   useEffect(() => {
@@ -490,7 +485,6 @@ export function BinaryTreeVisualizer() {
       frame = 0;
       let bottom = 0;
 
-      // Look at what is pinned to the very top of the viewport.
       for (const el of document.elementsFromPoint(window.innerWidth / 2, 2)) {
         let node: Element | null = el;
 
@@ -500,7 +494,6 @@ export function BinaryTreeVisualizer() {
           if (position === "fixed" || position === "sticky") {
             const rect = node.getBoundingClientRect();
 
-            // Only treat short bars as headers (ignore full-screen wrappers).
             if (rect.top <= 2 && rect.height <= 160) {
               bottom = Math.max(bottom, rect.bottom);
             }
@@ -518,7 +511,6 @@ export function BinaryTreeVisualizer() {
     };
 
     measure();
-    // capture: true also catches scrolling inside the app's own scroll container
     window.addEventListener("scroll", schedule, {
       passive: true,
       capture: true,
@@ -532,7 +524,6 @@ export function BinaryTreeVisualizer() {
     };
   }, []);
 
-  // Latest-value refs so timer callbacks never see stale state
   const rootRef = useRef(root);
   rootRef.current = root;
   const nextIdRef = useRef(nextId);
@@ -540,7 +531,6 @@ export function BinaryTreeVisualizer() {
   const speedRef = useRef(animationSpeed);
   speedRef.current = animationSpeed;
 
-  // Replay machinery
   const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const traverseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const framesRef = useRef<Step[] | null>(null);
@@ -548,7 +538,6 @@ export function BinaryTreeVisualizer() {
   const replayOriginalRef = useRef<{ tree: TreeNode | null } | null>(null);
   const historyIdRef = useRef(1);
 
-  // New-node animation tracking
   const [newIds, setNewIds] = useState<number[]>([]);
   const prevIdsRef = useRef<Set<number> | null>(null);
 
@@ -556,11 +545,9 @@ export function BinaryTreeVisualizer() {
   const stats = useMemo(() => getStats(root), [root]);
   const positioned = useMemo(() => layoutTree(root), [root]);
 
-  // The canvas uses fixed logical dimensions. Zoom scales only the tree drawing.
   const treeCanvasWidth = 1000;
   const treeCanvasHeight = Math.max(300, stats.height * 110 + 60);
 
-  // Detect any node that appeared (insert, redo, undo of delete, generate, replay)
   useEffect(() => {
     const ids = collectIds(root);
     const prev = prevIdsRef.current;
@@ -579,7 +566,6 @@ export function BinaryTreeVisualizer() {
     return () => clearTimeout(t);
   }, [root]);
 
-  // Clear playback timer on unmount
   useEffect(() => {
     return () => {
       if (playbackTimer.current !== null) {
@@ -610,7 +596,6 @@ export function BinaryTreeVisualizer() {
     setMessage(text);
   }
 
-  // Trees are never mutated after being stored: every operation works on a clone.
   function updateRoot(nextRoot: TreeNode | null) {
     const current = rootRef.current;
     setUndoStack((old) => [...old, current]);
@@ -622,9 +607,6 @@ export function BinaryTreeVisualizer() {
     setVisitedIds([]);
   }
 
-  /* ---------- HISTORY REPLAY ---------- */
-
-  // Stops any replay / traversal animation and puts the real tree back
   function abortReplay() {
     stopTraversalAnim();
     setVisitedIds([]);
@@ -680,7 +662,6 @@ export function BinaryTreeVisualizer() {
   function handlePlay() {
     if (isPlaying) return;
 
-    // Resume a paused replay
     if (
       framesRef.current &&
       frameIndexRef.current < framesRef.current.length
@@ -699,13 +680,12 @@ export function BinaryTreeVisualizer() {
 
     stopTraversalAnim();
     setVisitedIds([]);
-    const entries = history.slice().reverse(); // oldest first
+    const entries = history.slice().reverse();
     const original = rootRef.current;
     replayOriginalRef.current = { tree: original };
 
     const frames: Step[] = [];
 
-    // 1. Rewind to the state before the first recorded operation
     frames.push({
       line: null,
       run: () => {
@@ -720,7 +700,6 @@ export function BinaryTreeVisualizer() {
       },
     });
 
-    // 2. Two frames per recorded operation: announce, then apply
     entries.forEach((entry) => {
       const title = pseudocode[entry.op].title;
       frames.push({
@@ -747,7 +726,6 @@ export function BinaryTreeVisualizer() {
       });
     });
 
-    // 3. Put the real tree back (matters if you used Undo/Redo earlier)
     frames.push({
       line: null,
       run: () => {
@@ -765,8 +743,6 @@ export function BinaryTreeVisualizer() {
     setIsPlaying(true);
     runFrames();
   }
-
-  /* ---------- UNDO / REDO ---------- */
 
   function handleUndo() {
     abortReplay();
@@ -793,8 +769,6 @@ export function BinaryTreeVisualizer() {
     setTraversal(null);
     setMessage("Redo successful.");
   }
-
-  /* ---------- OPERATIONS ---------- */
 
   function readNumber(): number | null {
     if (value.trim() === "" || !Number.isFinite(Number(value))) {
@@ -932,7 +906,6 @@ export function BinaryTreeVisualizer() {
       ? `${labels[order]} traversal completed (${values.length} nodes).`
       : "The tree is empty.";
 
-    // Recorded up front so it appears in History; replay shows the full path.
     record(finalText, {
       op: order,
       before,
@@ -948,7 +921,6 @@ export function BinaryTreeVisualizer() {
       return;
     }
 
-    // Walk the tree one node at a time, lighting up the path as it goes.
     setTraversal([]);
     let step = 0;
 
@@ -1076,11 +1048,11 @@ export function BinaryTreeVisualizer() {
 
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
             Binary Tree Visualizer
           </h1>
 
-          <p className="text-xs text-muted-foreground sm:text-sm text-white">
+          <p className="text-xs text-[#0F6B6D] sm:text-sm">
             Explore BST operations, traversals, pseudocode, and complexity.
           </p>
         </div>
@@ -1094,14 +1066,11 @@ export function BinaryTreeVisualizer() {
       </header>
 
       <div className="grid grid-cols-1 items-start gap-3 px-4 pb-6 sm:px-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:px-8">
-        {/* Compact sticky sidebar; its top offset is measured from the app header. */}
         <aside
           style={{ "--sidebar-top": `${stickyTop}px` } as CSSProperties}
           className="min-w-0 space-y-2 lg:sticky lg:top-[var(--sidebar-top)] lg:max-h-[calc(100vh_-_var(--sidebar-top)_-_0.75rem)] lg:overflow-y-auto lg:pr-1"
         >
-          <Card
-            className="border-border bg-card shadow-sm"
-          >
+          <Card className="border-border bg-card shadow-sm">
             <CardHeader className="border-b border-border px-3 py-2">
               <CardTitle className="text-sm">Operations</CardTitle>
             </CardHeader>
@@ -1162,9 +1131,7 @@ export function BinaryTreeVisualizer() {
             </CardContent>
           </Card>
 
-          <Card
-            className="border-border bg-card shadow-sm"
-          >
+          <Card className="border-border bg-card shadow-sm">
             <CardHeader className="px-3 pb-1 pt-3">
               <CardTitle className="text-sm">Random Nodes</CardTitle>
             </CardHeader>
@@ -1225,9 +1192,7 @@ export function BinaryTreeVisualizer() {
             </CardContent>
           </Card>
 
-          <Card
-            className="border-border bg-card shadow-sm"
-          >
+          <Card className="border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
               <div>
                 <CardTitle className="text-sm">History</CardTitle>
@@ -1285,7 +1250,6 @@ export function BinaryTreeVisualizer() {
         </aside>
 
         <section className="flex min-w-0 flex-col gap-3">
-          {/* Visualization card: height is determined by its content. */}
           <Card className="min-w-0 overflow-hidden border-border bg-card shadow-sm">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3 sm:px-5">
               <div className="min-w-0">
@@ -1347,7 +1311,6 @@ export function BinaryTreeVisualizer() {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
-              {/* PLAYBACK CONTROLS */}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -1410,7 +1373,6 @@ export function BinaryTreeVisualizer() {
                 </div>
               </div>
 
-              {/* These statistics are outside the zoomed canvas. */}
               <div className="grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-muted/40 py-3 text-center">
                 <div className="min-w-0 px-2">
                   <p className="text-xs text-muted-foreground">Root</p>
@@ -1430,7 +1392,6 @@ export function BinaryTreeVisualizer() {
                 </div>
               </div>
 
-              {/* Fixed-height viewport; only its tree canvas is zoomed. */}
               <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-3 sm:h-[420px] sm:p-4">
                 {!root ? (
                   <div className="flex h-full min-h-[250px] flex-col items-center justify-center text-center">
@@ -1454,7 +1415,6 @@ export function BinaryTreeVisualizer() {
                       height: `${treeCanvasHeight * zoom}px`,
                     }}
                   >
-                    {/* Zoom affects this SVG and the nodes together, not the cards. */}
                     <div
                       className="absolute left-0 top-0 origin-top-left"
                       style={{
@@ -1556,7 +1516,6 @@ export function BinaryTreeVisualizer() {
                 )}
               </div>
 
-              {/* Traversal output remains at its normal size. */}
               <div className="rounded-xl border border-border bg-card px-4 py-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold">Traversal Output</p>
@@ -1577,7 +1536,6 @@ export function BinaryTreeVisualizer() {
             </CardContent>
           </Card>
 
-          {/* Pseudocode and complexity are separate, normal-sized cards. */}
           <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
             <Card className="min-w-0 border-border bg-card shadow-sm">
               <CardHeader className="border-b border-border px-4 py-3">

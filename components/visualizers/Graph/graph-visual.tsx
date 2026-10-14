@@ -839,10 +839,10 @@ export default function GraphVisualizer() {
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-2xl font-bold text-[#0F6B6D]">
             Graph Visualizer
           </h1>
-          <p className="text-sm text-muted-foreground text-white">
+          <p className="text-sm text-[#0F6B6D]">
             Build graphs and explore BFS and DFS step by step.
           </p>
         </div>
@@ -857,165 +857,159 @@ export default function GraphVisualizer() {
         {/* LEFT SIDEBAR */}
         <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           {/* OPERATIONS */}
-          <Card>
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-sm">Operations</CardTitle>
-              <CardDescription className="text-xs">
-                Modify your graph
-              </CardDescription>
-            </CardHeader>
+<Card>
+  <CardHeader className="p-3 pb-2">
+    <CardTitle className="text-sm">Operations</CardTitle>
+    <CardDescription className="text-xs">
+      Modify your graph
+    </CardDescription>
+  </CardHeader>
 
-            <CardContent className="space-y-2 p-3 pt-1">
-              <div className="space-y-1">
-                <label htmlFor="graph-value" className="text-xs font-medium">
-                  Vertex value
-                </label>
-                <Input
-                  id="graph-value"
-                  type="number"
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") handleAddVertex();
-                  }}
-                  placeholder="Enter value"
-                  className="h-8 text-sm"
-                />
-              </div>
+  <CardContent className="space-y-2 p-3 pt-1">
+    <div className="space-y-1">
+      <label htmlFor="graph-value" className="text-xs font-medium">
+        Vertex value
+      </label>
+      <Input
+        id="graph-value"
+        type="number"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") handleAddVertex();
+        }}
+        placeholder="Enter value"
+        className="h-8 text-sm"
+      />
+    </div>
 
-              <Button
-                onClick={handleAddVertex}
-                className={`h-8 w-full text-xs ${primaryButton}`}
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Add Vertex
-              </Button>
+    <Button
+      onClick={handleAddVertex}
+      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+    >
+      <Plus className="mr-1 h-3.5 w-3.5" />
+      Add Vertex
+    </Button>
 
-              <Button
-                variant="outline"
-                onClick={handleRemoveVertex}
-                className="h-8 w-full text-xs"
-              >
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Remove Vertex
-              </Button>
+    <Button
+      onClick={handleRemoveVertex}
+      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+    >
+      <Trash2 className="mr-1 h-3.5 w-3.5" />
+      Remove Vertex
+    </Button>
 
-              <Button
-                variant="outline"
-                onClick={handleSearch}
-                className="h-8 w-full text-xs"
-              >
-                <Search className="mr-1 h-3.5 w-3.5" />
-                Search Vertex
-              </Button>
+    <Button
+      onClick={handleSearch}
+      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+    >
+      <Search className="mr-1 h-3.5 w-3.5" />
+      Search Vertex
+    </Button>
 
-              <div className="space-y-2 border-t pt-3">
-                <p className="text-xs font-semibold">Edge Operations</p>
+    <div className="space-y-2 border-t pt-3">
+      <p className="text-xs font-semibold">Edge Operations</p>
 
-                <Input
-                  type="number"
-                  value={source}
-                  onChange={(event) => setSource(event.target.value)}
-                  placeholder="Source vertex"
-                  className="h-8 text-sm"
-                />
+      <Input
+        type="number"
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+        placeholder="Source vertex"
+        className="h-8 text-sm"
+      />
 
-                <Input
-                  type="number"
-                  value={target}
-                  onChange={(event) => setTarget(event.target.value)}
-                  placeholder="Target vertex"
-                  className="h-8 text-sm"
-                />
+      <Input
+        type="number"
+        value={target}
+        onChange={(event) => setTarget(event.target.value)}
+        placeholder="Target vertex"
+        className="h-8 text-sm"
+      />
 
-                <Button
-                  onClick={handleAddEdge}
-                  className={`h-8 w-full text-xs ${primaryButton}`}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" />
-                  Add Edge
-                </Button>
+      <Button
+        onClick={handleAddEdge}
+        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+      >
+        <Plus className="mr-1 h-3.5 w-3.5" />
+        Add Edge
+      </Button>
 
-                <Button
-                  variant="outline"
-                  onClick={handleRemoveEdge}
-                  className="h-8 w-full text-xs"
-                >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                  Remove Edge
-                </Button>
+      <Button
+        onClick={handleRemoveEdge}
+        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+      >
+        <Trash2 className="mr-1 h-3.5 w-3.5" />
+        Remove Edge
+      </Button>
 
-                <label className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={directed}
-                    onChange={(event) => setDirected(event.target.checked)}
-                    className="h-3.5 w-3.5"
-                  />
-                  Directed graph
-                </label>
+      <label className="flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={directed}
+          onChange={(event) => setDirected(event.target.checked)}
+          className="h-3.5 w-3.5"
+        />
+        Directed graph
+      </label>
 
-                <p className="text-[10px] leading-relaxed text-muted-foreground">
-                  Direction changes the displayed arrows. Traversal follows
-                  the behavior implemented in graph-operation.
-                </p>
-              </div>
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        Direction changes the displayed arrows. Traversal follows
+        the behavior implemented in graph-operation.
+      </p>
+    </div>
 
-              <div className="space-y-2 border-t pt-3">
-                <p className="text-xs font-semibold">Graph Traversal</p>
-                <p className="text-[10px] text-muted-foreground">
-                  Enter the starting vertex above.
-                </p>
+    <div className="space-y-2 border-t pt-3">
+      <p className="text-xs font-semibold">Graph Traversal</p>
+      <p className="text-[10px] text-muted-foreground">
+        Enter the starting vertex above.
+      </p>
 
-                <Button
-                  onClick={() => startTraversal("bfs")}
-                  className={`h-8 w-full text-xs ${primaryButton}`}
-                >
-                  Run BFS
-                </Button>
+      <Button
+        onClick={() => startTraversal("bfs")}
+        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+      >
+        Run BFS
+      </Button>
 
-                <Button
-                  variant="outline"
-                  onClick={() => startTraversal("dfs")}
-                  className="h-8 w-full text-xs"
-                >
-                  Run DFS
-                </Button>
-              </div>
+      <Button
+        onClick={() => startTraversal("dfs")}
+        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+      >
+        Run DFS
+      </Button>
+    </div>
 
-              <div className="space-y-2 border-t pt-3">
-                <p className="text-xs font-semibold">Random Graph</p>
+    <div className="space-y-2 border-t pt-3">
+      <p className="text-xs font-semibold">Random Graph</p>
 
-                <Input
-                  type="number"
-                  min={2}
-                  max={12}
-                  value={randomCount}
-                  onChange={(event) => setRandomCount(event.target.value)}
-                  className="h-8 text-sm"
-                  placeholder="Vertices (2–12)"
-                />
+      <Input
+        type="number"
+        min={2}
+        max={12}
+        value={randomCount}
+        onChange={(event) => setRandomCount(event.target.value)}
+        className="h-8 text-sm"
+        placeholder="Vertices (2–12)"
+      />
 
-                <Button
-                  variant="outline"
-                  onClick={handleRandomGraph}
-                  className="h-8 w-full text-xs"
-                >
-                  <Shuffle className="mr-1 h-3.5 w-3.5" />
-                  Generate Graph
-                </Button>
-              </div>
+      <Button
+        onClick={handleRandomGraph}
+        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+      >
+        <Shuffle className="mr-1 h-3.5 w-3.5" />
+        Generate Graph
+      </Button>
+    </div>
 
-              <Button
-                variant="outline"
-                onClick={handleClear}
-                className="h-8 w-full border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-              >
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Clear Graph
-              </Button>
-            </CardContent>
-          </Card>
+    <Button
+      onClick={handleClear}
+      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
+    >
+      <Trash2 className="mr-1 h-3.5 w-3.5" />
+      Clear Graph
+    </Button>
+  </CardContent>
+</Card>
 
           {/* UNDO / REDO */}
           <Card>

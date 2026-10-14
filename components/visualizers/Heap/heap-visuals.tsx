@@ -204,10 +204,10 @@ const complexityRows = [
 ];
 
 const primaryButton =
-   "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
+  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]";
 
 const secondaryButton =
-  "h-7 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
+  "h-8 w-full justify-start border-0 bg-[#D8A7B1] px-2 text-xs text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:text-[#4D3039] dark:hover:bg-[#E2BAC2]";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
@@ -800,19 +800,19 @@ export function HeapVisualizer() {
               </div>
 
               <div className="space-y-1 pt-1">
-                <Button onClick={insert} className={secondaryButton} variant="outline">
+                <Button onClick={insert} className={secondaryButton}>
                   Insert
                 </Button>
-                <Button onClick={removeMinimum} className={secondaryButton} variant="outline">
+                <Button onClick={removeMinimum} className={secondaryButton}>
                   Delete Minimum
                 </Button>
-                <Button onClick={search} className={secondaryButton} variant="outline">
+                <Button onClick={search} className={secondaryButton}>
                   Search
                 </Button>
-                <Button onClick={peekMinimum} className={secondaryButton} variant="outline">
+                <Button onClick={peekMinimum} className={secondaryButton}>
                   Get Minimum
                 </Button>
-                <Button onClick={traverse} className={secondaryButton} variant="outline">
+                <Button onClick={traverse} className={secondaryButton}>
                   Level-Order Traversal
                 </Button>
                 <Button
@@ -1079,7 +1079,7 @@ export function HeapVisualizer() {
               </div>
 
               {/* TREE VIEWPORT */}
-              <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-4 sm:h-[420px]">
+              <div className="h-[450px] overflow-auto rounded-xl border border-border bg-muted/20 p-4 sm:h-[550px]">
                 {heap.length === 0 ? (
                   <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
                     <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600 dark:bg-red-950/50">

@@ -711,7 +711,7 @@ export default function QueueVisualizer() {
         </Badge>
       </header>
 
-      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:overflow-hidden">
         {/* LEFT SIDEBAR */}
         <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
           <Card>
@@ -739,23 +739,21 @@ export default function QueueVisualizer() {
 
               <Button
                 onClick={handleEnqueue}
-                className="h-8 w-full bg-red-600 text-xs hover:bg-red-700"
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
                 <span className="mr-2">+</span> Enqueue
               </Button>
 
               <Button
                 onClick={handleDequeue}
-                variant="outline"
-                className="h-8 w-full text-xs"
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
                 <span className="mr-2">−</span> Dequeue
               </Button>
 
               <Button
                 onClick={handlePeek}
-                variant="outline"
-                className="h-8 w-full text-xs"
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
                 <span className="mr-2">⌕</span> Peek Front
               </Button>
@@ -775,8 +773,7 @@ export default function QueueVisualizer() {
 
                 <Button
                   onClick={handleSearch}
-                  variant="outline"
-                  className="h-8 w-full text-xs"
+                  className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
                 >
                   Search
                 </Button>
@@ -784,16 +781,14 @@ export default function QueueVisualizer() {
 
               <Button
                 onClick={handleTraverse}
-                variant="outline"
-                className="h-8 w-full text-xs"
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
                 FIFO Traversal
               </Button>
 
               <Button
                 onClick={handleClear}
-                variant="outline"
-                className="h-8 w-full border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
                 Clear Queue
               </Button>
@@ -845,8 +840,7 @@ export default function QueueVisualizer() {
 
               <Button
                 onClick={handleGenerate}
-                variant="outline"
-                className="h-8 w-full text-xs"
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
                 Generate Queue
               </Button>
@@ -1051,7 +1045,7 @@ export default function QueueVisualizer() {
               </div>
 
               {/* QUEUE DIAGRAM */}
-              <div className="flex flex-col overflow-hidden rounded-lg border bg-muted/10">
+              <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-muted/10">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-xs font-medium">Queue Structure</span>
                   <Badge variant="outline" className="text-[10px]">
@@ -1059,21 +1053,26 @@ export default function QueueVisualizer() {
                   </Badge>
                 </div>
 
-                <div className="flex h-[260px] overflow-auto p-4">
+                <div className="relative min-h-[400px] min-w-0 flex-1 overflow-auto p-6">
                   {queue.length === 0 ? (
-                    <div className="m-auto text-center">
-                      <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
-                        ∅
+                    <div className="flex min-h-[350px] items-center justify-center text-center">
+                      <div>
+                        <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
+                          ∅
+                        </div>
+                        <p className="text-sm font-medium">Queue is empty</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Enqueue a value to add the first element.
+                        </p>
                       </div>
-                      <p className="text-sm font-medium">Queue is empty</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Enqueue a value to add the first element.
-                      </p>
                     </div>
                   ) : (
                     <div
-                      className="m-auto flex min-w-max items-center gap-3 py-4 transition-transform"
-                      style={{ zoom }}
+                      className="flex min-h-[300px] w-max min-w-full items-center gap-3 py-8 transition-transform"
+                      style={{
+                        zoom,
+                        minWidth: `${queue.length * 136 + 160}px`,
+                      }}
                     >
                       <div className="flex flex-col items-center gap-2">
                         <Badge className="bg-red-600 text-white hover:bg-red-600">
@@ -1094,7 +1093,7 @@ export default function QueueVisualizer() {
                         return (
                           <div
                             key={nodeId}
-                            className="flex items-center gap-3"
+                            className="flex w-max items-center gap-3"
                           >
                             <div className="flex flex-col items-center gap-2">
                               <div

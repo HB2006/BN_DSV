@@ -240,7 +240,7 @@ const primaryButton =
   "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
 
 const secondaryButton =
-  "h-7 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
+  "h-7 w-full justify-start border border-[#0F6B6D] bg-[#0F6B6D] px-2 text-xs text-white hover:border-[#0B5557] hover:bg-[#0B5557] hover:text-white dark:border-[#0F6B6D] dark:bg-[#0F6B6D] dark:text-white dark:hover:border-[#0B5557] dark:hover:bg-[#0B5557] dark:hover:text-white";
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
@@ -799,10 +799,10 @@ export function LinkedListVisualizer() {
 
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
             Linked List Visualizer
           </h1>
-          <p className="text-xs text-muted-foreground text-white">
+          <p className="text-xs text-[#0F6B6D]">
             Explore pointers, operations, pseudocode, and complexity.
           </p>
         </div>
