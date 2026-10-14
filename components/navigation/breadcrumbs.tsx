@@ -83,7 +83,11 @@ export function Breadcrumbs({
     // Always add home
     items.push(
       <BreadcrumbItem key="home">
-        <BreadcrumbLink href="/"className="text-black">Home</BreadcrumbLink>
+        <BreadcrumbLink
+  href="/"
+  className="home-link text-foreground hover:text-foreground">
+  Home
+</BreadcrumbLink>
       </BreadcrumbItem>
     )
 
@@ -94,7 +98,7 @@ export function Breadcrumbs({
       
       if (route) {
         items.push(<BreadcrumbSeparator key={`separator-${index}`} />)
-        
+
         if (index === segments.length - 1) {
           // Last segment - show as current page
           items.push(
@@ -119,7 +123,7 @@ export function Breadcrumbs({
   return (
     <header className="sticky top-0 z-50 flex h-20 shrink-0 items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center gap-2 px-4 w-full">
-        <SidebarTrigger className="-ml-1" />
+        <SidebarTrigger className="-ml-1 text-foreground hover:text-foreground dark:text-white dark:hover:text-white" />
         <Separator orientation="vertical" className="mr-2 h-4" />
         <Breadcrumb>
           <BreadcrumbList>

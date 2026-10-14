@@ -1,7 +1,6 @@
 
 import Link from "next/link"
 import { BrainCircuit, ArrowRight } from "lucide-react"
-
 export default function HomePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6">
@@ -16,7 +15,7 @@ export default function HomePage() {
           Welcome
         </p>
 
-        <h1 className="mb-6 text-4xl font-bold tracking-tight text-black sm:text-6xl">
+        <h1 className="mb-6 text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
           Data Structure Visualizer by BINARY NINJAS
         </h1>
 
