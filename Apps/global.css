@@ -2,52 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {   
-  --background: 330 100% 97%;
-  --foreground: 330 20% 20%;
+:root {
+  /* Main theme: teal, cream and peach */
+  --background: 33 100% 95%;
+  --foreground: 181 28% 15%;
 
-  --card: 330 100% 99%;
-  --card-foreground: 330 20% 20%;
+  --card: 0 0% 100%;
+  --card-foreground: 181 28% 15%;
 
-  --popover: 330 100% 99%;
-  --popover-foreground: 330 20% 20%;
+  --popover: 33 100% 98%;
+  --popover-foreground: 181 28% 15%;
 
-  --primary: 345 38% 75%;
-  --primary-foreground: 330 20% 20%;
+  /* Rich teal */
+  --primary: 181 76% 24%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 150 20% 88%;
-  --secondary-foreground: 150 25% 20%;
+  /* Muted teal */
+  --secondary: 173 30% 52%;
+  --secondary-foreground: 181 28% 15%;
 
-  --muted: 330 25% 93%;
-  --muted-foreground: 330 10% 45%;
+  --muted: 33 40% 90%;
+  --muted-foreground: 181 15% 35%;
 
-  --accent: 150 20% 88%;
-  --accent-foreground: 150 25% 20%;
+  /* Peach */
+  --accent: 22 87% 75%;
+  --accent-foreground: 181 28% 15%;
 
-  --destructive: 0 65% 50%;
+  /* Coral peach */
+  --destructive: 12 75% 61%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 330 30% 90%;
-  --input: 330 30% 90%;
-  --ring: 345 38% 75%;
+  --border: 173 20% 82%;
+  --input: 173 20% 82%;
+  --ring: 181 76% 24%;
 
-  --chart-1: 345 38% 75%;
-  --chart-2: 150 20% 55%;
-  --chart-3: 280 25% 65%;
-  --chart-4: 35 75% 65%;
-  --chart-5: 200 50% 60%;
+  /* Charts */
+  --chart-1: 181 76% 24%;
+  --chart-2: 173 30% 52%;
+  --chart-3: 22 87% 75%;
+  --chart-4: 12 75% 61%;
+  --chart-5: 40 70% 75%;
 
   --radius: 0.75rem;
 
   /* Sidebar theme */
-  --sidebar-background: 330 100% 98%;
-  --sidebar-foreground: 330 20% 20%;
-  --sidebar-primary: 345 38% 65%;
-  --sidebar-primary-foreground: 330 20% 20%;
-  --sidebar-accent: 330 35% 92%;
-  --sidebar-accent-foreground: 330 20% 20%;
-  --sidebar-border: 330 30% 90%;
-  --sidebar-ring: 345 38% 75%;
+  --sidebar-background: 33 100% 97%;
+  --sidebar-foreground: 181 28% 15%;
+  --sidebar-primary: 181 76% 24%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 173 30% 88%;
+  --sidebar-accent-foreground: 181 28% 15%;
+  --sidebar-border: 173 20% 82%;
+  --sidebar-ring: 181 76% 24%;
 }
 
 /* Theme tokens and animations */
