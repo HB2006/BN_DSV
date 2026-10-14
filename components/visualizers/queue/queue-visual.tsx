@@ -773,10 +773,10 @@ export default function QueueVisualizer() {
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] dark:text-[#FFAB91] sm:text-2xl">
             Queue Visualizer
           </h1>
-          <p className="text-xs text-[#0F6B6D]">
+          <p className="text-xs text-[#0F6B6D] dark:text-white">
             Explore FIFO operations through an interactive queue.
           </p>
         </div>
@@ -1410,7 +1410,7 @@ export default function QueueVisualizer() {
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <CardTitle className="text-sm">Time Complexity</CardTitle>
                 <CardDescription className="text-xs">
-                  Performance of queue operations
+                  Performance of Queue Operations
                 </CardDescription>
               </CardHeader>
 
@@ -1423,7 +1423,9 @@ export default function QueueVisualizer() {
                       <div
                         key={item.operation}
                         className={`rounded-lg border p-3 transition-colors ${
-                          isActive ? "border-red-300 bg-red-50/70" : "bg-card"
+                          isActive
+                            ? "border-red-300 bg-red-50/70 dark:border-[#FFAB91]/60 dark:bg-[#FFAB91]/10"
+                            : "bg-card"
                         }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1432,9 +1434,10 @@ export default function QueueVisualizer() {
                           </p>
 
                           <Badge
-                            variant="outline"
                             className={`font-mono text-[10px] ${
-                              isActive ? "border-red-300 text-red-700" : ""
+                              isActive
+                                ? "border-red-300 text-[#FBB917] dark:border-[#FFAB91] dark:text-[#000000]"
+                                : ""
                             }`}
                           >
                             {item.time}
