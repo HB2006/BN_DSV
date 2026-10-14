@@ -207,7 +207,7 @@ const primaryButton =
   "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]";
 
 const secondaryButton =
-  "h-8 w-full justify-start border-0 bg-[#D8A7B1] px-2 text-xs text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:text-[#4D3039] dark:hover:bg-[#E2BAC2]";
+  "h-8 w-full justify-start border-0 bg-[#0F6B6D] px-2 text-xs text-white hover:bg-[#0B5557] dark:bg-[#0F6B6D] dark:text-white dark:hover:bg-[#0B5557]";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2;
@@ -758,10 +758,10 @@ export function HeapVisualizer() {
       {/* PAGE HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
             Min-Heap Visualizer
           </h1>
-          <p className="text-xs text-muted-foreground sm:text-sm text-white">
+          <p className="text-xs text-[#0F6B6D]">
             Explore heap operations, array indices, pseudocode, and complexity.
           </p>
         </div>

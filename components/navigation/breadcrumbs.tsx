@@ -83,7 +83,7 @@ export function Breadcrumbs({
     // Always add home
     items.push(
       <BreadcrumbItem key="home">
-        <BreadcrumbLink href="/"className="text-white">Home</BreadcrumbLink>
+        <BreadcrumbLink href="/"className="text-black">Home</BreadcrumbLink>
       </BreadcrumbItem>
     )
 

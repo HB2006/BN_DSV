@@ -158,8 +158,8 @@ const complexityRows = [
   { operation: "Clear Stack", key: "clear", time: "O(1)", why: "Replace the stack with an empty array." },
 ];
 
-const primaryButton =
-  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
+const coralButton =
+  "bg-[#F08080] text-white hover:bg-[#E56B6B] dark:bg-[#F08080] dark:hover:bg-[#E56B6B]";
 
 const MAX_HISTORY = 50;
 
@@ -649,10 +649,10 @@ export function StackVisualizer() {
       {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
             Stack Visualizer
           </h1>
-          <p className="text-sm text-muted-foreground  text-white">
+          <p className="text-xs text-[#0F6B6D]">
             Explore LIFO operations through an interactive stack.
           </p>
         </div>

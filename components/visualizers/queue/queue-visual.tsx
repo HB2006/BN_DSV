@@ -698,10 +698,10 @@ export default function QueueVisualizer() {
 
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
             Queue Visualizer
           </h1>
-          <p className="text-sm text-muted-foreground text-white">
+          <p className="text-xs text-[#0F6B6D]">
             Explore FIFO operations through an interactive queue.
           </p>
         </div>

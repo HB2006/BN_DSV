@@ -12,15 +12,15 @@ export default function HomePage() {
           </div>
         </div>
 
-        <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-white text-muted-foreground">
+        <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-black text-muted-foreground">
           Welcome
         </p>
 
-        <h1 className="mb-6 text-4xl font-bold tracking-tight text-white sm:text-6xl">
+        <h1 className="mb-6 text-4xl font-bold tracking-tight text-black sm:text-6xl">
           Data Structure Visualizer by BINARY NINJAS
         </h1>
 
-        <p className="mx-auto mb-8 max-w-lg text-base leading-7 text-muted-foreground text-white sm:text-lg">
+        <p className="mx-auto mb-8 max-w-lg text-base leading-7 text-muted-foreground text-black sm:text-lg">
           Explore the fundamental data structures through interactive visualizations.
           Understand how they work, perform operations, and learn
           their time and space complexities.
@@ -34,7 +34,7 @@ export default function HomePage() {
           <ArrowRight className="h-4 w-4" />
         </Link>
 
-        <p className="mt-10 text-sm text-muted-foreground text-white">
+        <p className="mt-10 text-sm text-muted-foreground text-black">
           More features coming soon.
         </p>
       </div>

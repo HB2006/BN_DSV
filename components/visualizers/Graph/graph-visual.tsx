@@ -736,54 +736,64 @@ export default function GraphVisualizer() {
   };
 
   const handlePlay = () => {
-    if (traversalRef.current.length === 0) {
-      setMessage("Run BFS or DFS first to create traversal steps.");
+  const steps = traversalRef.current;
+
+  if (steps.length === 0) {
+    setMessage("Run BFS or DFS first to create traversal steps.");
+    return;
+  }
+
+  // Avoid starting multiple playback intervals.
+  if (timerRef.current !== null) return;
+
+  let current = playbackIndexRef.current;
+
+  // Restart only when playback has already reached the end.
+  if (current >= steps.length - 1) {
+    current = 0;
+    playbackIndexRef.current = 0;
+    setPlaybackIndex(0);
+    setActiveNode(steps[0]);
+  }
+
+  setIsPlaying(true);
+
+  timerRef.current = setInterval(() => {
+    const currentSteps = traversalRef.current;
+    const currentIndex = playbackIndexRef.current;
+
+    if (currentSteps.length === 0 || currentIndex >= currentSteps.length - 1) {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      setIsPlaying(false);
+      setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
       return;
     }
 
-    if (playbackIndexRef.current >= traversalRef.current.length - 1) {
-      playbackIndexRef.current = 0;
-      setPlaybackIndex(0);
-      setActiveNode(traversalRef.current[0]);
+    const next = currentIndex + 1;
+
+    playbackIndexRef.current = next;
+    setPlaybackIndex(next);
+    setActiveNode(currentSteps[next]);
+    setActiveLine(operation === "bfs" ? 4 : 2);
+    setMessage(
+      `Visiting vertex ${currentSteps[next]} (${next + 1}/${currentSteps.length}).`
+    );
+
+    if (next >= currentSteps.length - 1) {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      setIsPlaying(false);
+      setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
     }
-
-    stopPlayback();
-    setIsPlaying(true);
-
-    timerRef.current = setInterval(() => {
-      const steps = traversalRef.current;
-      const current = playbackIndexRef.current;
-
-      if (current >= steps.length - 1) {
-        if (timerRef.current !== null) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-
-        setIsPlaying(false);
-        setMessage(`Traversal complete: ${steps.join(" → ")}.`);
-        return;
-      }
-
-      const next = current + 1;
-
-      playbackIndexRef.current = next;
-      setPlaybackIndex(next);
-      setActiveNode(steps[next]);
-      setActiveLine(operation === "bfs" ? 4 : 2);
-      setMessage(`Visiting vertex ${steps[next]} (${next + 1}/${steps.length}).`);
-
-      if (next >= steps.length - 1) {
-        if (timerRef.current !== null) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-
-        setIsPlaying(false);
-        setMessage(`Traversal complete: ${steps.join(" → ")}.`);
-      }
-    }, Number(animationSpeed));
-  };
+  }, Number(animationSpeed));
+};
 
   const handleRestartPlayback = () => {
     stopPlayback();
@@ -884,7 +894,13 @@ export default function GraphVisualizer() {
     </div>
 
     <Button
-      onClick={handleAddVertex}
+      onClick={() => {
+        if (isPlaying) {
+          stopPlayback();
+          } else {
+              handlePlay( );
+          }
+        }}
       className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
     >
       <Plus className="mr-1 h-3.5 w-3.5" />
@@ -913,7 +929,15 @@ export default function GraphVisualizer() {
       <Input
         type="number"
         value={source}
-        onChange={(event) => setSource(event.target.value)}
+        onChange={(event) => {
+        const wasPlaying = isPlaying;
+          stopPlayback();
+          setAnimationSpeed(event.target.value);
+
+          if (wasPlaying) {
+            setMessage("Speed updated. Press Play to resume.");
+          }
+        }}
         placeholder="Source vertex"
         className="h-8 text-sm"
       />
