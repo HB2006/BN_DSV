@@ -27,7 +27,7 @@ export default function HomePage() {
         </p>
 
         <Link
-          href="/visualizers/stack"
+          href="/visualizers"
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
         >
           Get Started

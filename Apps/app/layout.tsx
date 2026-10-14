@@ -1,23 +1,26 @@
-
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Nunito } from "next/font/google";
+
 import "../global.css";
 
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/global/theme-provider";
-import { AppSidebar } from "@/components/global/app-sidebar";
+import SidebarWrapper from "@/components/global/sidebar-wrapper";
 import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { Breadcrumbs } from "@/components/navigation/breadcrumbs";
 
-const inter = Inter({ subsets: ["latin"] });
-
 export const metadata: Metadata = {
   title: "DS Visualizer",
   description: "DS Visualizer is a tool for visualizing data structures",
 };
+
+const nunito = Nunito({
+  subsets: ["latin"],
+  variable: "--font-nunito",
+});
 
 export default function RootLayout({
   children,
@@ -26,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={nunito.className}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -34,7 +37,8 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <SidebarProvider>
-            <AppSidebar />
+            <SidebarWrapper />
+
             <SidebarInset>
               <Breadcrumbs />
               <main className="flex-1 p-3 sm:p-10">
@@ -42,6 +46,7 @@ export default function RootLayout({
               </main>
             </SidebarInset>
           </SidebarProvider>
+
           <Toaster />
         </ThemeProvider>
       </body>

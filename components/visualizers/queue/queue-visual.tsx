@@ -1280,7 +1280,7 @@ export default function QueueVisualizer() {
                       key={`${operation}-${index}`}
                       className={`flex min-w-max gap-3 rounded px-2 py-1 ${
                         activeLine === index
-                          ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
+                          ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
                           : ""
                       }`}
                     >
