@@ -11,8 +11,6 @@ import {
   Plus,
   Trash2,
   Search,
-  ArrowLeft,
-  ArrowRight,
   Gauge,
 } from "lucide-react";
 
@@ -23,8 +21,6 @@ import {
   addEdge,
   removeEdge,
   searchVertex,
-  bfs,
-  dfs,
   clearGraph,
 } from "./graph-operation";
 
@@ -54,6 +50,13 @@ type CodeInfo = {
   steps: string[];
   code: string[];
   complexity: string;
+};
+
+/** One step of a BFS / DFS trace. */
+type TraceStep = {
+  node: number; // vertex value being visited
+  from: number | null; // vertex value we arrived from (null for the start)
+  line: number; // pseudocode line to highlight
 };
 
 /* ---------- SHARED STYLE TOKENS (match the Stack / Queue pages) ---------- */
@@ -262,10 +265,126 @@ const complexityRows = [
 
 const MAX_HISTORY = 50;
 
+// Drawing area (matches the SVG viewBox 0 0 500 330) and node radius
+const CANVAS_CENTER = { x: 250, y: 165 };
+const MIN_NODE_GAP = 75;
+
 const cloneGraph = (graph: GraphData): GraphData => ({
   nodes: graph.nodes.map((node) => ({ ...node })),
   edges: graph.edges.map((edge) => ({ ...edge })),
 });
+
+/**
+ * Pick a spot for a new vertex that does not sit on top of an existing one.
+ * Prefers the free spot closest to the middle of the canvas; if the canvas is
+ * crowded it falls back to the spot farthest from every other vertex.
+ */
+const findFreePosition = (nodes: GraphData["nodes"]) => {
+  if (nodes.length === 0) return { ...CANVAS_CENTER };
+
+  let roomy: { x: number; y: number } | null = null;
+  let roomyDistance = Infinity;
+  let fallback = { ...CANVAS_CENTER };
+  let fallbackGap = -1;
+
+  for (let x = 45; x <= 455; x += 10) {
+    for (let y = 45; y <= 285; y += 10) {
+      let nearest = Infinity;
+
+      for (const node of nodes) {
+        nearest = Math.min(nearest, Math.hypot(node.x - x, node.y - y));
+      }
+
+      if (nearest > fallbackGap) {
+        fallbackGap = nearest;
+        fallback = { x, y };
+      }
+
+      if (nearest >= MIN_NODE_GAP) {
+        const toCenter = Math.hypot(
+          x - CANVAS_CENTER.x,
+          y - CANVAS_CENTER.y
+        );
+
+        if (toCenter < roomyDistance) {
+          roomyDistance = toCenter;
+          roomy = { x, y };
+        }
+      }
+    }
+  }
+
+  return roomy ?? fallback;
+};
+
+/**
+ * Build the exact step-by-step trace of a BFS or DFS.
+ * - Neighbors are visited in ascending order so the result is predictable.
+ * - Undirected: edges work both ways. Directed: edges follow source -> target.
+ * - Every step records which vertex we came from, so the edge that was
+ *   actually used can be highlighted (not every edge between visited nodes).
+ */
+const buildTrace = (
+  graph: GraphData,
+  startValue: number,
+  type: "bfs" | "dfs",
+  directed: boolean
+): TraceStep[] => {
+  const valueById = new Map<number, number>();
+  graph.nodes.forEach((node) => valueById.set(node.id, node.value));
+
+  const adjacency = new Map<number, number[]>();
+  graph.nodes.forEach((node) => adjacency.set(node.value, []));
+
+  graph.edges.forEach((edge) => {
+    const from = valueById.get(edge.source);
+    const to = valueById.get(edge.target);
+
+    if (from === undefined || to === undefined) return;
+
+    adjacency.get(from)?.push(to);
+    if (!directed) adjacency.get(to)?.push(from);
+  });
+
+  adjacency.forEach((list) => list.sort((a, b) => a - b));
+
+  const steps: TraceStep[] = [];
+  const visited = new Set<number>();
+
+  if (type === "bfs") {
+    // pseudocode line 6 = "visit vertex"
+    const queue: { node: number; from: number | null }[] = [
+      { node: startValue, from: null },
+    ];
+    visited.add(startValue);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      steps.push({ node: current.node, from: current.from, line: 6 });
+
+      for (const neighbor of adjacency.get(current.node) ?? []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push({ node: neighbor, from: current.node });
+        }
+      }
+    }
+  } else {
+    // pseudocode line 2 = "visit vertex"
+    const visit = (node: number, from: number | null) => {
+      visited.add(node);
+      steps.push({ node, from, line: 2 });
+
+      for (const neighbor of adjacency.get(node) ?? []) {
+        if (!visited.has(neighbor)) visit(neighbor, node);
+      }
+    };
+
+    visit(startValue, null);
+  }
+
+  return steps;
+};
 
 export default function GraphVisualizer() {
   const [graph, setGraph] = useState<GraphData>(() =>
@@ -275,6 +394,7 @@ export default function GraphVisualizer() {
   const [value, setValue] = useState("");
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
+  const [startVertex, setStartVertex] = useState("");
   const [nextId, setNextId] = useState(6);
   const [operation, setOperation] =
     useState<GraphOperation>("add-vertex");
@@ -282,6 +402,8 @@ export default function GraphVisualizer() {
   const [activeLine, setActiveLine] = useState(-1);
   const [activeNode, setActiveNode] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[]>([]);
+  // tracedFrom[i] = vertex we arrived from when visiting traversal[i]
+  const [tracedFrom, setTracedFrom] = useState<(number | null)[]>([]);
   const [message, setMessage] = useState(
     "Choose an operation to get started."
   );
@@ -300,7 +422,14 @@ export default function GraphVisualizer() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const graphRef = useRef(graph);
   const traversalRef = useRef(traversal);
+  const parentsRef = useRef<(number | null)[]>([]);
+  const linesRef = useRef<number[]>([]);
   const playbackIndexRef = useRef(playbackIndex);
+  // last BFS / DFS that was run, so Play can replay it even after the graph changed
+  const lastRunRef = useRef<{ type: "bfs" | "dfs"; start: number } | null>(
+    null
+  );
+  const [canReplay, setCanReplay] = useState(false);
 
   useEffect(() => {
     graphRef.current = graph;
@@ -364,12 +493,18 @@ export default function GraphVisualizer() {
     setGraph(restoredGraph);
     graphRef.current = restoredGraph;
 
-    setActiveNode(snapshot.activeNode);
-    setActiveLine(snapshot.activeLine);
+    // A restored graph never has a traversal running on it.
+    setActiveNode(null);
+    setActiveLine(-1);
 
-    const restoredTraversal = [...snapshot.traversal];
-    setTraversal(restoredTraversal);
-    traversalRef.current = restoredTraversal;
+    setTraversal([]);
+    traversalRef.current = [];
+    setTracedFrom([]);
+    parentsRef.current = [];
+    linesRef.current = [];
+
+    setPlaybackIndex(-1);
+    playbackIndexRef.current = -1;
 
     setMessage(snapshot.message);
   }, []);
@@ -421,6 +556,9 @@ export default function GraphVisualizer() {
     setActiveNode(null);
     setTraversal([]);
     traversalRef.current = [];
+    setTracedFrom([]);
+    parentsRef.current = [];
+    linesRef.current = [];
 
     setPlaybackIndex(-1);
     playbackIndexRef.current = -1;
@@ -442,9 +580,8 @@ export default function GraphVisualizer() {
     saveUndo();
     resetTraversal();
 
-    const angle = (nextId * 2 * Math.PI) / Math.max(nextId, 6);
-    const x = 250 + 170 * Math.cos(angle);
-    const y = 165 + 115 * Math.sin(angle);
+    // Place the new vertex in free space so it never covers an existing one.
+    const { x, y } = findFreePosition(graph.nodes);
 
     const updatedGraph = addVertex(
       cloneGraph(graph),
@@ -643,59 +780,113 @@ export default function GraphVisualizer() {
     }
   };
 
-  const startTraversal = (type: "bfs" | "dfs") => {
-    const startValue = Number(value);
+  /* ---------- TRAVERSAL PLAYBACK ---------- */
 
-    if (value.trim() === "" || !Number.isFinite(startValue)) {
-      setMessage("Enter a starting vertex value.");
-      return;
-    }
+  // Show one step of the current trace (node, pseudocode line, message).
+  const showStep = useCallback((index: number) => {
+    const steps = traversalRef.current;
 
-    const startNode = graph.nodes.find(
-      (node) => node.value === startValue
+    if (index < 0 || index >= steps.length) return;
+
+    playbackIndexRef.current = index;
+    setPlaybackIndex(index);
+    setActiveNode(steps[index]);
+    setActiveLine(linesRef.current[index] ?? 0);
+
+    const from = parentsRef.current[index];
+
+    setMessage(
+      from === null || from === undefined
+        ? `Starting at vertex ${steps[index]} (1/${steps.length}).`
+        : `Visiting vertex ${steps[index]} from ${from} (${index + 1}/${steps.length}).`
     );
+  }, []);
 
-    if (!startNode) {
+  // (Re)start the timer that walks through the trace.
+  const startTimer = useCallback(
+    (speedMs: number) => {
+      if (timerRef.current !== null) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      setIsPlaying(true);
+
+      timerRef.current = setInterval(() => {
+        const steps = traversalRef.current;
+        const current = playbackIndexRef.current;
+
+        if (steps.length === 0 || current >= steps.length - 1) {
+          stopPlayback();
+          return;
+        }
+
+        const next = current + 1;
+        showStep(next);
+
+        if (next >= steps.length - 1) {
+          stopPlayback();
+          setMessage(`Traversal complete: ${steps.join(" → ")}.`);
+        }
+      }, speedMs);
+    },
+    [showStep, stopPlayback]
+  );
+
+  // Build the trace on the CURRENT graph, load it, and show step 1.
+  // Returns the number of steps (0 if the start vertex does not exist).
+  const loadTrace = (type: "bfs" | "dfs", startValue: number): number => {
+    if (!graph.nodes.some((node) => node.value === startValue)) {
       setMessage(`Starting vertex ${startValue} does not exist.`);
-      return;
+      return 0;
     }
 
     stopPlayback();
 
+    const trace = buildTrace(graph, startValue, type, directed);
+
+    const values = trace.map((step) => step.node);
+    const parents = trace.map((step) => step.from);
+    const lines = trace.map((step) => step.line);
+
     setOperation(type);
-    setActiveNode(null);
-    setActiveLine(0);
-    setTraversal([]);
-    traversalRef.current = [];
 
-    setPlaybackIndex(-1);
-    playbackIndexRef.current = -1;
+    setTraversal(values);
+    traversalRef.current = values;
+    setTracedFrom(parents);
+    parentsRef.current = parents;
+    linesRef.current = lines;
 
-    const result =
-      type === "bfs" ? bfs(graph, startValue) : dfs(graph, startValue);
+    lastRunRef.current = { type, start: startValue };
+    setCanReplay(true);
 
-    const validResult = result.filter((nodeValue) =>
-      graph.nodes.some((node) => node.value === nodeValue)
-    );
+    showStep(0);
 
-    if (validResult.length === 0) {
-      setMessage("No traversal steps were generated.");
+    if (values.length === 1) {
+      setMessage(
+        `${type.toUpperCase()} from vertex ${startValue}: no connected vertices to visit.`
+      );
+    }
+
+    return values.length;
+  };
+
+  // BFS / DFS: only the start vertex is needed — the trace plays by itself.
+  const startTraversal = (type: "bfs" | "dfs") => {
+    const startValue = Number(startVertex);
+
+    if (startVertex.trim() === "" || !Number.isFinite(startValue)) {
+      setMessage("Enter a starting vertex.");
       return;
     }
 
-    setTraversal(validResult);
-    traversalRef.current = validResult;
+    const count = loadTrace(type, startValue);
 
-    setPlaybackIndex(0);
-    playbackIndexRef.current = 0;
-
-    setActiveNode(validResult[0]);
-    setActiveLine(type === "bfs" ? 4 : 2);
-    setMessage(
-      `${type.toUpperCase()} traversal started from vertex ${startValue}.`
-    );
+    if (count === 0) return;
 
     recordHistory(`${type.toUpperCase()} traversal from ${startValue}`);
+
+    if (count > 1) startTimer(Number(animationSpeed));
   };
 
   const handleClear = () => {
@@ -768,112 +959,37 @@ export default function GraphVisualizer() {
     recordHistory(`Generated random graph with ${count} vertices`);
   };
 
-  const stepForward = useCallback(() => {
-    const steps = traversalRef.current;
-    const current = playbackIndexRef.current;
-
-    if (steps.length === 0 || current >= steps.length - 1) {
-      stopPlayback();
-      return;
-    }
-
-    const next = current + 1;
-
-    playbackIndexRef.current = next;
-    setPlaybackIndex(next);
-    setActiveNode(steps[next]);
-    setActiveLine(operation === "bfs" ? 4 : 2);
-    setMessage(`Visiting vertex ${steps[next]} (${next + 1}/${steps.length}).`);
-
-    if (next >= steps.length - 1) {
-      stopPlayback();
-      setMessage(`Traversal complete: ${steps.join(" → ")}.`);
-    }
-  }, [operation, stopPlayback]);
-
-  const stepBackward = () => {
-    stopPlayback();
-
-    const steps = traversalRef.current;
-    const current = playbackIndexRef.current;
-
-    if (steps.length === 0 || current <= 0) {
-      setMessage("Already at the first traversal step.");
-      return;
-    }
-
-    const previous = current - 1;
-
-    playbackIndexRef.current = previous;
-    setPlaybackIndex(previous);
-    setActiveNode(steps[previous]);
-    setActiveLine(operation === "bfs" ? 4 : 2);
-    setMessage(`Returned to vertex ${steps[previous]}.`);
-  };
-
+  // Play / Restart only REPLAY the last traversal.
   const handlePlay = () => {
-    const steps = traversalRef.current;
-
-    if (steps.length === 0) {
-      setMessage("Run BFS or DFS first to create traversal steps.");
-      return;
-    }
-
     if (timerRef.current !== null) return;
 
-    let current = playbackIndexRef.current;
+    // Nothing on screen (for example the graph was edited since the last run):
+    // replay the last BFS / DFS from history on the current graph.
+    if (traversalRef.current.length === 0) {
+      const last = lastRunRef.current;
 
-    if (current >= steps.length - 1) {
-      current = 0;
-      playbackIndexRef.current = 0;
-      setPlaybackIndex(0);
-      setActiveNode(steps[0]);
-    }
-
-    setIsPlaying(true);
-
-    timerRef.current = setInterval(() => {
-      const currentSteps = traversalRef.current;
-      const currentIndex = playbackIndexRef.current;
-
-      if (
-        currentSteps.length === 0 ||
-        currentIndex >= currentSteps.length - 1
-      ) {
-        if (timerRef.current !== null) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-
-        setIsPlaying(false);
-
-        if (currentSteps.length > 0) {
-          setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
-        }
-
+      if (!last) {
+        setMessage("Run BFS or DFS first, then use Play to replay it.");
         return;
       }
 
-      const next = currentIndex + 1;
+      const count = loadTrace(last.type, last.start);
 
-      playbackIndexRef.current = next;
-      setPlaybackIndex(next);
-      setActiveNode(currentSteps[next]);
-      setActiveLine(operation === "bfs" ? 4 : 2);
-      setMessage(
-        `Visiting vertex ${currentSteps[next]} (${next + 1}/${currentSteps.length}).`
-      );
+      if (count > 1) startTimer(Number(animationSpeed));
 
-      if (next >= currentSteps.length - 1) {
-        if (timerRef.current !== null) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
+      return;
+    }
 
-        setIsPlaying(false);
-        setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
-      }
-    }, Number(animationSpeed));
+    const steps = traversalRef.current;
+
+    // replay from the start if the last run already finished
+    if (playbackIndexRef.current >= steps.length - 1) {
+      showStep(0);
+    }
+
+    if (steps.length === 1) return;
+
+    startTimer(Number(animationSpeed));
   };
 
   const handleRestartPlayback = () => {
@@ -884,22 +1000,17 @@ export default function GraphVisualizer() {
       return;
     }
 
-    playbackIndexRef.current = 0;
-    setPlaybackIndex(0);
-    setActiveNode(traversalRef.current[0]);
-    setActiveLine(operation === "bfs" ? 4 : 2);
+    showStep(0);
     setMessage("Traversal restarted.");
   };
 
   const handleSpeedChange = (speed: string) => {
     const wasPlaying = timerRef.current !== null;
 
-    stopPlayback();
     setAnimationSpeed(speed);
 
-    if (wasPlaying) {
-      setMessage("Speed updated. Press Play to resume.");
-    }
+    // keep playing at the new speed
+    if (wasPlaying) startTimer(Number(speed));
   };
 
   const handleZoomIn = () => {
@@ -919,21 +1030,39 @@ export default function GraphVisualizer() {
   const getNodeById = (id: number) =>
     graph.nodes.find((node) => node.id === id);
 
-  const edgeIsHighlighted = (sourceId: number, targetId: number) => {
+  /**
+   * Is this edge part of the traversal path shown so far?
+   * Only edges actually used to reach a vertex are lit — not every edge that
+   * happens to join two visited vertices. "current" = the edge just used.
+   */
+  const edgeState = (
+    sourceId: number,
+    targetId: number
+  ): "current" | "visited" | null => {
     const sourceNode = getNodeById(sourceId);
     const targetNode = getNodeById(targetId);
 
-    if (!sourceNode || !targetNode) return false;
+    if (!sourceNode || !targetNode || playbackIndex < 0) return null;
 
-    const sourceVisited = traversal.indexOf(sourceNode.value);
-    const targetVisited = traversal.indexOf(targetNode.value);
+    let result: "current" | "visited" | null = null;
 
-    return (
-      sourceVisited >= 0 &&
-      targetVisited >= 0 &&
-      sourceVisited <= playbackIndex &&
-      targetVisited <= playbackIndex
-    );
+    for (let i = 0; i <= playbackIndex && i < traversal.length; i++) {
+      const from = tracedFrom[i];
+
+      if (from === null || from === undefined) continue;
+
+      const to = traversal[i];
+
+      const matches =
+        (from === sourceNode.value && to === targetNode.value) ||
+        (!directed &&
+          from === targetNode.value &&
+          to === sourceNode.value);
+
+      if (matches) result = i === playbackIndex ? "current" : "visited";
+    }
+
+    return result;
   };
 
   return (
@@ -955,10 +1084,10 @@ export default function GraphVisualizer() {
         {/* HEADER */}
         <header className="flex flex-wrap items-center justify-between gap-3 border-b py-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D] dark:text-[#FFAB91]">
               Graph Visualizer
             </h1>
-            <p className="text-xs text-[#0F6B6D]">
+            <p className="text-xs text-[#0F6B6D] dark:text-white">
               Build graphs and explore BFS and DFS step by step.
             </p>
           </div>
@@ -1059,38 +1188,59 @@ export default function GraphVisualizer() {
                     <input
                       type="checkbox"
                       checked={directed}
-                      onChange={(event) => setDirected(event.target.checked)}
+                      onChange={(event) => {
+                        setDirected(event.target.checked);
+                        resetTraversal();
+                        setMessage(
+                          event.target.checked
+                            ? "Directed mode: BFS and DFS follow edges from source to target."
+                            : "Undirected mode: edges work in both directions."
+                        );
+                      }}
                       className="h-3.5 w-3.5 accent-[#0F6B6D]"
                     />
                     Directed graph
                   </label>
 
                   <p className="text-[10px] leading-relaxed text-muted-foreground">
-                    The directed toggle changes displayed arrows. BFS and DFS
-                    follow the behavior implemented in graph-operation.
+                    The directed toggle changes the arrows and the direction
+                    BFS and DFS follow.
                   </p>
                 </div>
 
                 {/* Traversal */}
                 <div className="space-y-2 border-t border-[#BFD8D8] pt-3">
                   <p className="text-xs font-medium">Graph Traversal</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    Enter the starting vertex above.
+
+                  <Input
+                    type="number"
+                    value={startVertex}
+                    onChange={(event) => setStartVertex(event.target.value)}
+                    placeholder="Start vertex"
+                    aria-label="Start vertex"
+                    className={inputCls}
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      onClick={() => startTraversal("bfs")}
+                      className={opButton}
+                    >
+                      Run BFS
+                    </Button>
+
+                    <Button
+                      onClick={() => startTraversal("dfs")}
+                      className={opButton}
+                    >
+                      Run DFS
+                    </Button>
+                  </div>
+
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Enter the start vertex and run. The traversal plays by
+                    itself; use the controls above the graph to replay it.
                   </p>
-
-                  <Button
-                    onClick={() => startTraversal("bfs")}
-                    className={opButton}
-                  >
-                    Run BFS
-                  </Button>
-
-                  <Button
-                    onClick={() => startTraversal("dfs")}
-                    className={opButton}
-                  >
-                    Run DFS
-                  </Button>
                 </div>
 
                 {/* Random graph */}
@@ -1221,7 +1371,7 @@ export default function GraphVisualizer() {
               </CardHeader>
 
               <CardContent className="flex flex-col gap-3 p-4">
-                {/* PLAYBACK CONTROLS */}
+                {/* PLAYBACK CONTROLS (replay of the last traversal) */}
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#BFD8D8] bg-muted/20 p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -1229,7 +1379,9 @@ export default function GraphVisualizer() {
                       variant="outline"
                       size="sm"
                       onClick={handlePlay}
-                      disabled={isPlaying || traversal.length === 0}
+                      disabled={
+                        isPlaying || (traversal.length === 0 && !canReplay)
+                      }
                       className={coralButton}
                     >
                       <Play className="h-4 w-4" />
@@ -1246,33 +1398,6 @@ export default function GraphVisualizer() {
                     >
                       <Pause className="h-4 w-4" />
                       Pause
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={stepBackward}
-                      disabled={traversal.length === 0 || playbackIndex <= 0}
-                      className={coralButton}
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={stepForward}
-                      disabled={
-                        traversal.length === 0 ||
-                        playbackIndex >= traversal.length - 1
-                      }
-                      className={coralButton}
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                      Next
                     </Button>
 
                     <Button
@@ -1401,6 +1526,7 @@ export default function GraphVisualizer() {
                           className="h-auto max-h-[560px] w-full min-w-[300px]"
                         >
                           <defs>
+                            {/* arrow for directed mode */}
                             <marker
                               id="graph-arrow"
                               markerWidth="8"
@@ -1414,61 +1540,138 @@ export default function GraphVisualizer() {
                                 fill="currentColor"
                               />
                             </marker>
+
+                            {/* node body: light, airy gradient */}
+                            <radialGradient
+                              id="graph-node-fill"
+                              cx="35%"
+                              cy="30%"
+                              r="80%"
+                            >
+                              <stop offset="0%" stopColor="#FFFFFF" />
+                              <stop offset="100%" stopColor="#DCEEEE" />
+                            </radialGradient>
+
+                            {/* soft node shadow */}
+                            <filter
+                              id="graph-shadow"
+                              x="-40%"
+                              y="-40%"
+                              width="180%"
+                              height="190%"
+                            >
+                              <feDropShadow
+                                dx="0"
+                                dy="2.5"
+                                stdDeviation="2.5"
+                                floodColor="currentColor"
+                                floodOpacity="0.25"
+                              />
+                            </filter>
+
+                            {/* soft glow for the active node */}
+                            <filter
+                              id="graph-glow"
+                              x="-80%"
+                              y="-80%"
+                              width="260%"
+                              height="260%"
+                            >
+                              <feGaussianBlur stdDeviation="5" />
+                            </filter>
                           </defs>
 
-                          {graph.edges.map((edge, index) => {
-                            const sourceNode = getNodeById(edge.source);
-                            const targetNode = getNodeById(edge.target);
+                          {/* EDGES: gently curved on the outer rim, straight through the middle */}
+                          {(() => {
+                            const cx =
+                              graph.nodes.reduce((sum, n) => sum + n.x, 0) /
+                              Math.max(graph.nodes.length, 1);
+                            const cy =
+                              graph.nodes.reduce((sum, n) => sum + n.y, 0) /
+                              Math.max(graph.nodes.length, 1);
 
-                            if (!sourceNode || !targetNode) return null;
+                            return graph.edges.map((edge, index) => {
+                              const sourceNode = getNodeById(edge.source);
+                              const targetNode = getNodeById(edge.target);
 
-                            const highlighted = edgeIsHighlighted(
-                              edge.source,
-                              edge.target
-                            );
+                              if (!sourceNode || !targetNode) return null;
 
-                            const dx = targetNode.x - sourceNode.x;
-                            const dy = targetNode.y - sourceNode.y;
-                            const length = Math.sqrt(dx * dx + dy * dy) || 1;
-                            const offsetX = (dx / length) * 23;
-                            const offsetY = (dy / length) * 23;
+                              const state = edgeState(
+                                edge.source,
+                                edge.target
+                              );
 
-                            const x1 = sourceNode.x + offsetX;
-                            const y1 = sourceNode.y + offsetY;
-                            const x2 = targetNode.x - offsetX;
-                            const y2 = targetNode.y - offsetY;
+                              const dx = targetNode.x - sourceNode.x;
+                              const dy = targetNode.y - sourceNode.y;
+                              const length = Math.sqrt(dx * dx + dy * dy) || 1;
 
-                            return (
-                              <g key={`${edge.source}-${edge.target}-${index}`}>
-                                <line
-                                  x1={x1}
-                                  y1={y1}
-                                  x2={x2}
-                                  y2={y2}
-                                  stroke={
-                                    highlighted ? "#dc2626" : "currentColor"
-                                  }
-                                  strokeWidth={highlighted ? 3.5 : 1.8}
-                                  opacity={highlighted ? 1 : 0.45}
-                                  markerEnd={
-                                    directed ? "url(#graph-arrow)" : undefined
-                                  }
-                                />
+                              // midpoint and its distance from the graph centre
+                              const mx = (sourceNode.x + targetNode.x) / 2;
+                              const my = (sourceNode.y + targetNode.y) / 2;
+                              const fromCentre = Math.hypot(mx - cx, my - cy);
 
-                                {edge.weight !== undefined && (
-                                  <text
-                                    x={(x1 + x2) / 2}
-                                    y={(y1 + y2) / 2 - 6}
-                                    textAnchor="middle"
-                                    className="fill-muted-foreground text-[11px]"
-                                  >
-                                    {edge.weight}
-                                  </text>
-                                )}
-                              </g>
-                            );
-                          })}
+                              // unit normal, flipped so it points away from the centre
+                              let nx = -dy / length;
+                              let ny = dx / length;
+                              if (nx * (mx - cx) + ny * (my - cy) < 0) {
+                                nx = -nx;
+                                ny = -ny;
+                              }
 
+                              // outer edges bulge outward, central edges stay straight
+                              const rim = Math.min(
+                                Math.max((fromCentre - 60) / 100, 0),
+                                1
+                              );
+                              const bend = Math.min(length * 0.14, 24) * rim;
+
+                              const qx = mx + nx * bend * 2; // quadratic control point
+                              const qy = my + ny * bend * 2;
+
+                              // trim both ends so lines stop at the node edge (radius 23)
+                              const sLen =
+                                Math.hypot(qx - sourceNode.x, qy - sourceNode.y) ||
+                                1;
+                              const tLen =
+                                Math.hypot(qx - targetNode.x, qy - targetNode.y) ||
+                                1;
+
+                              const x1 = sourceNode.x + ((qx - sourceNode.x) / sLen) * 23;
+                              const y1 = sourceNode.y + ((qy - sourceNode.y) / sLen) * 23;
+                              const x2 = targetNode.x + ((qx - targetNode.x) / tLen) * 23;
+                              const y2 = targetNode.y + ((qy - targetNode.y) / tLen) * 23;
+
+                              return (
+                                <g key={`${edge.source}-${edge.target}-${index}`}>
+                                  <path
+                                    d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
+                                    fill="none"
+                                    stroke={state ? "#dc2626" : "currentColor"}
+                                    strokeWidth={
+                                      state === "current"
+                                        ? 4.5
+                                        : state === "visited"
+                                          ? 3.2
+                                          : 1.8
+                                    }
+                                    strokeLinecap="round"
+                                    opacity={
+                                      state === "current"
+                                        ? 1
+                                        : state === "visited"
+                                          ? 0.85
+                                          : 0.45
+                                    }
+                                    markerEnd={
+                                      directed ? "url(#graph-arrow)" : undefined
+                                    }
+                                  />
+                                </g>
+                              );
+                            });
+                          })()}
+
+                          {/* NODES */}
                           {graph.nodes.map((node) => {
                             const isActive = activeNode === node.value;
                             const traversalIndex = traversal.indexOf(
@@ -1481,16 +1684,28 @@ export default function GraphVisualizer() {
 
                             return (
                               <g key={node.id}>
+                                {/* soft halo behind the active node */}
                                 {isActive && (
-                                  <circle
-                                    cx={node.x}
-                                    cy={node.y}
-                                    r={29}
-                                    fill="#dc2626"
-                                    opacity={0.2}
-                                  />
+                                  <>
+                                    <circle
+                                      cx={node.x}
+                                      cy={node.y}
+                                      r={32}
+                                      fill="#dc2626"
+                                      opacity={0.25}
+                                      filter="url(#graph-glow)"
+                                    />
+                                    <circle
+                                      cx={node.x}
+                                      cy={node.y}
+                                      r={29}
+                                      fill="#dc2626"
+                                      opacity={0.18}
+                                    />
+                                  </>
                                 )}
 
+                                {/* main body */}
                                 <circle
                                   cx={node.x}
                                   cy={node.y}
@@ -1500,31 +1715,38 @@ export default function GraphVisualizer() {
                                       ? "#dc2626"
                                       : isVisited
                                         ? "#fee2e2"
-                                        : "var(--background)"
+                                        : "url(#graph-node-fill)"
                                   }
                                   stroke={
                                     isActive
                                       ? "#b91c1c"
                                       : isVisited
                                         ? "#f87171"
-                                        : "currentColor"
+                                        : "#0F6B6D"
                                   }
-                                  strokeWidth={isActive ? 3.5 : 1.8}
+                                  strokeWidth={isActive ? 3 : 2}
+                                  filter="url(#graph-shadow)"
                                 />
 
+                                {/* vertex number */}
                                 <text
                                   x={node.x}
-                                  y={node.y + 5}
+                                  y={node.y}
                                   textAnchor="middle"
-                                  fontSize="14"
-                                  fontWeight="600"
+                                  dominantBaseline="central"
+                                  fontSize="15"
+                                  fontWeight="700"
                                   fill={
                                     isActive
                                       ? "#ffffff"
                                       : isVisited
                                         ? "#7f1d1d"
-                                        : "currentColor"
+                                        : "#0F6B6D"
                                   }
+                                  style={{
+                                    pointerEvents: "none",
+                                    userSelect: "none",
+                                  }}
                                 >
                                   {node.value}
                                 </text>
@@ -1696,21 +1918,20 @@ export default function GraphVisualizer() {
                       return (
                         <div
                           key={item.key}
-                          className={`rounded-xl border p-4 transition-colors ${
+                          className={`rounded-lg border p-3 transition-colors ${
                             isActive
-                              ? "border-red-300 bg-red-50"
-                              : "border-[#BFD8D8] bg-card"
+                              ? "border-red-300 bg-red-50/70 dark:border-[#FFAB91]/60 dark:bg-[#FFAB91]/10"
+                              : "bg-card"
                           }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs font-medium">{item.title}</p>
 
                             <Badge
-                              variant="outline"
-                              className={`rounded-full font-mono text-[10px] ${
+                               className={`font-mono text-[10px] ${
                                 isActive
-                                  ? "border-red-300 text-red-600"
-                                  : "border-[#BFD8D8]"
+                                  ? "border-red-300 text-[#FBB917] dark:border-[#FFAB91] dark:text-[#000000]"
+                                  : ""
                               }`}
                             >
                               {item.time}

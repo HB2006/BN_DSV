@@ -53,6 +53,7 @@ type HistoryEntry = {
   activeId: number | null;
   traversal: number[] | null;
   path?: number[] | null;
+  value?: number; // value searched / inserted / deleted (used to replay the path)
   line: number | null;
 };
 
@@ -424,6 +425,29 @@ const VISIT_LINE: Record<TraversalOrder, number> = {
   levelorder: 3,
 };
 
+const TRAVERSAL_LABELS: Record<TraversalOrder, string> = {
+  inorder: "Inorder",
+  preorder: "Preorder",
+  postorder: "Postorder",
+  levelorder: "Level-order",
+};
+
+// Nodes visited while looking for `value`, from the root down.
+function searchPath(root: TreeNode | null, value: number): TreeNode[] {
+  const path: TreeNode[] = [];
+  let current = root;
+
+  while (current) {
+    path.push(current);
+
+    if (value === current.value) break;
+
+    current = value < current.value ? current.left : current.right;
+  }
+
+  return path;
+}
+
 function getStats(
   root: TreeNode | null
 ): { count: number; height: number } {
@@ -767,18 +791,128 @@ export function BinaryTreeVisualizer() {
     entries.forEach((entry) => {
       const title = pseudocode[entry.op].title;
 
+      // Traversals replay node by node; search / insert / delete replay the
+      // root-to-target path; everything else jumps straight to the result.
+      const isTraversal =
+        entry.traversal != null &&
+        entry.path != null &&
+        entry.path.length > 0;
+
+      const isPathOp =
+        (entry.op === "insert" ||
+          entry.op === "delete" ||
+          entry.op === "search") &&
+        entry.value !== undefined;
+
+      const isRandom =
+        entry.op === "levelorder" && entry.traversal == null;
+
+      // 1) header: announce the operation and reset the tree to its "before" state
       frames.push({
         line: 0,
         run: () => {
+          const start = cloneTree(entry.before);
+
+          rootRef.current = start;
+          setRoot(start);
+
           setOperation(entry.op);
           setReplayEntryId(entry.id);
-          setTraversal(null);
+          setTraversal(isTraversal ? [] : null);
           setVisitedIds([]);
-          setActiveNode(entry.op === "delete" ? entry.activeId : null);
-          setMessage(`Replaying: ${title}`);
+          setActiveNode(null);
+          setMessage(
+            isRandom
+              ? "Replaying: random tree generation"
+              : `Replaying: ${title}`
+          );
         },
       });
 
+      // 2a) traversal: one frame per visited node
+      if (isTraversal) {
+        const values = entry.traversal as number[];
+        const ids = entry.path as number[];
+        const order = entry.op as TraversalOrder;
+        const label = TRAVERSAL_LABELS[order];
+        const visitLine = VISIT_LINE[order];
+
+        ids.forEach((id, i) => {
+          frames.push({
+            line: visitLine,
+            run: () => {
+              setActiveNode(id);
+              setVisitedIds(ids.slice(0, i + 1));
+              setTraversal(values.slice(0, i + 1));
+              setMessage(
+                `${label}: visiting ${values[i]} (${i + 1} of ${values.length})`
+              );
+            },
+          });
+        });
+
+        frames.push({
+          line: null,
+          run: () => {
+            setActiveNode(null);
+            setMessage(entry.text);
+          },
+        });
+
+        return;
+      }
+
+      // 2b) search / insert / delete: walk the path from the root
+      if (isPathOp) {
+        const target = entry.value as number;
+        const walked = searchPath(entry.before, target);
+        const pathIds = walked.map((node) => node.id);
+
+        walked.forEach((node, i) => {
+          frames.push({
+            line: 2,
+            run: () => {
+              setActiveNode(node.id);
+              setVisitedIds(pathIds.slice(0, i + 1));
+              setMessage(
+                `Comparing ${target} with ${node.value} (step ${i + 1} of ${walked.length})`
+              );
+            },
+          });
+        });
+
+        frames.push({
+          line: entry.line,
+          run: () => {
+            const next = cloneTree(entry.after);
+
+            rootRef.current = next;
+            setRoot(next);
+            setTraversal(null);
+
+            if (entry.op === "insert") {
+              setActiveNode(entry.activeId);
+              setVisitedIds(
+                entry.activeId !== null
+                  ? [...pathIds, entry.activeId]
+                  : pathIds
+              );
+            } else if (entry.op === "delete") {
+              setActiveNode(null);
+              setVisitedIds([]);
+            } else {
+              setActiveNode(entry.activeId);
+              setVisitedIds(pathIds);
+            }
+
+            setMessage(entry.text);
+          },
+        });
+
+        return;
+      }
+
+      // 2c) clear / random tree: show the result
       frames.push({
         line: entry.line,
         run: () => {
@@ -786,7 +920,7 @@ export function BinaryTreeVisualizer() {
 
           rootRef.current = next;
           setRoot(next);
-          setActiveNode(entry.op === "delete" ? null : entry.activeId);
+          setActiveNode(entry.activeId);
           setTraversal(entry.traversal);
           setVisitedIds(entry.path ?? []);
           setMessage(entry.text);
@@ -804,6 +938,8 @@ export function BinaryTreeVisualizer() {
         replayOriginalRef.current = null;
         setReplayEntryId(null);
         setActiveNode(null);
+        setTraversal(null);
+        setVisitedIds([]);
         setMessage("Replay finished.");
       },
     });
@@ -903,6 +1039,7 @@ export function BinaryTreeVisualizer() {
       after: cloneTree(after),
       activeId: id,
       traversal: null,
+      value: n,
       line: 1,
     });
   }
@@ -937,6 +1074,7 @@ export function BinaryTreeVisualizer() {
       after: cloneTree(after),
       activeId: found.id,
       traversal: null,
+      value: n,
       line: 4,
     });
   }
@@ -967,6 +1105,7 @@ export function BinaryTreeVisualizer() {
         after: cloneTree(before),
         activeId: found?.id ?? null,
         traversal: null,
+        value: n,
         line,
       }
     );
@@ -1167,11 +1306,11 @@ export function BinaryTreeVisualizer() {
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-3 border-b py-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D] dark:text-[#FFAB91]">
               Binary Tree Visualizer
             </h1>
 
-            <p className="text-xs text-[#0F6B6D]">
+            <p className="text-xs text-[#0F6B6D] dark:text-white">
               Explore BST operations, traversals, pseudocode, and complexity.
             </p>
           </div>
@@ -1604,9 +1743,9 @@ export function BinaryTreeVisualizer() {
                                   <line
                                     key={`edge-${item.node.id}`}
                                     x1={item.parentX}
-                                    y1={item.parentY! + 28}
+                                    y1={item.parentY! + 22}
                                     x2={item.x}
-                                    y2={item.y - 28}
+                                    y2={item.y - 22}
                                     stroke={
                                       isVisited ? "#dc2626" : "currentColor"
                                     }
@@ -1629,7 +1768,7 @@ export function BinaryTreeVisualizer() {
                             return (
                               <div
                                 key={node.id}
-                                className={`anim-new absolute z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-16 sm:w-16 ${
+                                className={`anim-new absolute z-10 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-12 sm:w-12 ${
                                   activeNode === node.id
                                     ? "border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
                                     : isVisited
@@ -1649,7 +1788,7 @@ export function BinaryTreeVisualizer() {
                                     : {}),
                                 }}
                               >
-                                <span className="text-lg font-bold leading-none sm:text-xl">
+                                <span className="text-sm font-bold leading-none sm:text-base">
                                   {node.value}
                                 </span>
 
@@ -1820,10 +1959,10 @@ export function BinaryTreeVisualizer() {
                       return (
                         <div
                           key={row.operation}
-                          className={`rounded-xl border p-4 transition-colors ${
+                          className={`rounded-lg border p-3 transition-colors ${
                             isActive
-                              ? "border-red-300 bg-red-50"
-                              : "border-[#BFD8D8] bg-card"
+                              ? "border-red-300 bg-red-50/70 dark:border-[#FFAB91]/60 dark:bg-[#FFAB91]/10"
+                              : "bg-card"
                           }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1832,11 +1971,10 @@ export function BinaryTreeVisualizer() {
                             </p>
 
                             <Badge
-                              variant="outline"
-                              className={`rounded-full font-mono text-[10px] ${
+                              className={`font-mono text-[10px] ${
                                 isActive
-                                  ? "border-red-300 text-red-600"
-                                  : "border-[#BFD8D8]"
+                                  ? "border-red-300 text-[#FBB917] dark:border-[#FFAB91] dark:text-[#000000]"
+                                  : ""
                               }`}
                             >
                               {row.time}
