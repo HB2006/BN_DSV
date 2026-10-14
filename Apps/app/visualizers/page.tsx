@@ -1,3 +1,4 @@
+import Image from "next/image";
 export default function VisualizersPage() {
   return (
     <div className="valley-scene">
@@ -91,21 +92,15 @@ export default function VisualizersPage() {
         <div className="valley-mascot">
           <span className="flame flame-left" aria-hidden="true">🔥</span>
 
-          <div className="flex items-end gap-1">
-            <span
-              className="ninja-pop mascot-bob text-6xl sm:text-8xl"
-              role="img"
-              aria-label="Binary Ninja"
-            >
-              🥷
-            </span>
-            <span
-              className="ninja-pop ninja-pop-delay mascot-bob mascot-bob-delay text-6xl sm:text-8xl"
-              role="img"
-              aria-label="Binary Ninja"
-            >
-              🥷
-            </span>
+                    <div className="flex items-end">
+            <Image
+              src="/Ninja.png"
+              alt="Binary Ninja"
+              width={240}
+              height={240}
+              priority
+              className="ninja-pop mascot-bob h-32 w-auto sm:h-48"
+            />
           </div>
 
           <span className="flame flame-right" aria-hidden="true">🔥</span>
