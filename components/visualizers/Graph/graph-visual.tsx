@@ -1478,10 +1478,13 @@ export default function GraphVisualizer() {
 
                   <div className={`${innerBox} min-w-0 bg-card p-3`}>
                     <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
-                      Complexity
+                      Visited
                     </p>
                     <p className="truncate text-xl font-medium">
-                      {info.complexity}
+                      {traversal.length > 0
+                        ? Math.min(playbackIndex + 1, traversal.length)
+                        : 0}{" "}
+                      / {graph.nodes.length}
                     </p>
                   </div>
                 </div>
