@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import {
   Card,
@@ -234,7 +240,7 @@ const primaryButton =
   "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]";
 
 const secondaryButton =
-  "h-8 w-full justify-start border border-border bg-card px-2 text-xs text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
+  "h-7 w-full justify-start border border-border bg-card px-2 text-[11px] text-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-300";
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
@@ -441,10 +447,11 @@ function layoutTree(root: TreeNode | null): PositionedNode[] {
 export function BinaryTreeVisualizer() {
   const [root, setRoot] = useState<TreeNode | null>(() => {
     let tree: TreeNode | null = null;
+    const initial = [50, 30, 70, 20, 40, 60, 80];
 
-    [50, 30, 70, 20, 40, 60, 80].forEach((value, index) => {
-      tree = insertNode(tree, value, index + 1);
-    });
+    for (let i = 0; i < initial.length; i++) {
+      tree = insertNode(tree, initial[i], i + 1);
+    }
 
     return tree;
   });
@@ -471,6 +478,59 @@ export function BinaryTreeVisualizer() {
   const [animationSpeed, setAnimationSpeed] = useState("1");
   const [undoStack, setUndoStack] = useState<(TreeNode | null)[]>([]);
   const [redoStack, setRedoStack] = useState<(TreeNode | null)[]>([]);
+
+  // Keep the sticky sidebar just below the app's fixed/sticky header so the two
+  // never overlap, whatever height that header has.
+  const [stickyTop, setStickyTop] = useState(80);
+
+  useEffect(() => {
+    let frame = 0;
+
+    const measure = () => {
+      frame = 0;
+      let bottom = 0;
+
+      // Look at what is pinned to the very top of the viewport.
+      for (const el of document.elementsFromPoint(window.innerWidth / 2, 2)) {
+        let node: Element | null = el;
+
+        while (node && node !== document.body) {
+          const position = getComputedStyle(node).position;
+
+          if (position === "fixed" || position === "sticky") {
+            const rect = node.getBoundingClientRect();
+
+            // Only treat short bars as headers (ignore full-screen wrappers).
+            if (rect.top <= 2 && rect.height <= 160) {
+              bottom = Math.max(bottom, rect.bottom);
+            }
+          }
+
+          node = node.parentElement;
+        }
+      }
+
+      setStickyTop(Math.round(bottom) + 12);
+    };
+
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+
+    measure();
+    // capture: true also catches scrolling inside the app's own scroll container
+    window.addEventListener("scroll", schedule, {
+      passive: true,
+      capture: true,
+    });
+    window.addEventListener("resize", schedule);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+    };
+  }, []);
 
   // Latest-value refs so timer callbacks never see stale state
   const rootRef = useRef(root);
@@ -506,13 +566,14 @@ export function BinaryTreeVisualizer() {
     const prev = prevIdsRef.current;
     prevIdsRef.current = new Set(ids);
 
-    if (prev === null) return;
+    if (prev === null) return undefined;
 
     const added = ids.filter((id) => !prev.has(id));
     if (added.length === 0) {
       setNewIds([]);
-      return;
+      return undefined;
     }
+
     setNewIds(added);
     const t = setTimeout(() => setNewIds([]), 1600);
     return () => clearTimeout(t);
@@ -1032,9 +1093,15 @@ export function BinaryTreeVisualizer() {
         </Badge>
       </header>
 
-      <div className="grid grid-cols-1 items-start gap-3 px-4 pb-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
-        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
-          <Card className="border-border bg-card shadow-sm">
+      <div className="grid grid-cols-1 items-start gap-3 px-4 pb-6 sm:px-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:px-8">
+        {/* Compact sticky sidebar; its top offset is measured from the app header. */}
+        <aside
+          style={{ "--sidebar-top": `${stickyTop}px` } as CSSProperties}
+          className="min-w-0 space-y-2 lg:sticky lg:top-[var(--sidebar-top)] lg:max-h-[calc(100vh_-_var(--sidebar-top)_-_0.75rem)] lg:overflow-y-auto lg:pr-1"
+        >
+          <Card
+            className="border-border bg-card shadow-sm"
+          >
             <CardHeader className="border-b border-border px-3 py-2">
               <CardTitle className="text-sm">Operations</CardTitle>
             </CardHeader>
@@ -1051,7 +1118,7 @@ export function BinaryTreeVisualizer() {
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder="Value"
-                  className="h-8 bg-background px-2 text-xs"
+                  className="h-7 bg-background px-2 text-[11px]"
                 />
               </div>
 
@@ -1086,7 +1153,7 @@ export function BinaryTreeVisualizer() {
 
                 <Button
                   onClick={clearTree}
-                  className="h-8 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-[11px] text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                   variant="outline"
                 >
                   Clear Tree
@@ -1095,7 +1162,9 @@ export function BinaryTreeVisualizer() {
             </CardContent>
           </Card>
 
-          <Card className="border-border bg-card shadow-sm">
+          <Card
+            className="border-border bg-card shadow-sm"
+          >
             <CardHeader className="px-3 pb-1 pt-3">
               <CardTitle className="text-sm">Random Nodes</CardTitle>
             </CardHeader>
@@ -1113,7 +1182,7 @@ export function BinaryTreeVisualizer() {
                   max="20"
                   value={randomCount}
                   onChange={(e) => setRandomCount(e.target.value)}
-                  className="h-8 px-2 text-xs"
+                  className="h-7 px-2 text-[11px]"
                 />
               </div>
 
@@ -1128,7 +1197,7 @@ export function BinaryTreeVisualizer() {
                     type="number"
                     value={minValue}
                     onChange={(e) => setMinValue(e.target.value)}
-                    className="h-8 px-2 text-xs"
+                    className="h-7 px-2 text-[11px]"
                   />
                 </div>
 
@@ -1142,21 +1211,23 @@ export function BinaryTreeVisualizer() {
                     type="number"
                     value={maxValue}
                     onChange={(e) => setMaxValue(e.target.value)}
-                    className="h-8 px-2 text-xs"
+                    className="h-7 px-2 text-[11px]"
                   />
                 </div>
               </div>
 
               <Button
                 onClick={generateRandom}
-                className={`h-8 w-full text-xs ${primaryButton}`}
+                className={`h-7 w-full text-[11px] ${primaryButton}`}
               >
                 Generate Tree
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="border-border bg-card shadow-sm">
+          <Card
+            className="border-border bg-card shadow-sm"
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
               <div>
                 <CardTitle className="text-sm">History</CardTitle>
@@ -1184,7 +1255,7 @@ export function BinaryTreeVisualizer() {
                   Recent operations appear here.
                 </p>
               ) : (
-                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                <ul className="max-h-32 space-y-1 overflow-y-auto pr-1">
                   {history.map((item) => (
                     <li
                       key={item.id}

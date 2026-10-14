@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -255,6 +254,24 @@ const complexity: Record<
   },
 };
 
+const resultRows = [
+  { label: "Best Case", key: "best" as const },
+  { label: "Average Case", key: "average" as const },
+  { label: "Worst Case", key: "worst" as const },
+  { label: "Space Complexity", key: "space" as const },
+  { label: "Notes", key: "note" as const },
+];
+
+/*
+  Palette (sampled from the Stack Visualizer page):
+    page background   #0F6B68  (teal)
+    cards             #FFF4E6  (cream)
+    panels / headers  #DDE1D3  (sage)
+    insets            #EDE9DD  (stone)
+    accent            #FFAB91  (coral peach)
+    body text         #0B4A47  (deep teal)
+*/
+
 export default function ComparePage() {
   const [operation, setOperation] = useState<Operation>("Search");
   const [selected, setSelected] = useState<Structure[]>([
@@ -262,7 +279,7 @@ export default function ComparePage() {
     "Queue",
     "Linked List",
     "Binary Tree",
-    "Graph"
+    "Graph",
   ]);
 
   const toggleStructure = (structure: Structure) => {
@@ -273,215 +290,204 @@ export default function ComparePage() {
     );
   };
 
-  const resultRows = [
-    { label: "Best case", key: "best" as const },
-    { label: "Average case", key: "average" as const },
-    { label: "Worst case", key: "worst" as const },
-    { label: "Space complexity", key: "space" as const },
-    { label: "Notes", key: "note" as const },
-  ];
+  return (
+    <main className="min-h-screen bg-[#0F6B68] px-6 py-7 text-[#0B4A47] lg:px-10">
+      <div className="mx-auto max-w-[1600px] space-y-5">
+        {/* Page heading */}
+        <header className="border-b border-white/20 pb-6">
+          <h1 className="text-3xl font-semibold tracking-tight text-white lg:text-4xl">
+            Compare Operations
+          </h1>
+          <p className="mt-3 text-sm text-white/85 md:text-base">
+            Select an operation and choose data structures to compare their
+            performance.
+          </p>
+        </header>
 
+        {/* 1. Operation selection */}
+        <section className="rounded-2xl bg-[#FFF4E6] p-6 shadow-sm">
+          <h2 className="mb-5 text-lg font-semibold text-[#0F6B68]">
+            1. Select an Operation
+          </h2>
 
-return (
-  <main className="min-h-screen bg-[#fcfcfd] px-6 py-7 text-slate-800 lg:px-10">
-    <div className="mx-auto max-w-[1600px]">
+          <div className="flex flex-wrap gap-3">
+            {operations.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setOperation(item)}
+                aria-pressed={operation === item}
+                className={`flex min-w-28 items-center justify-center gap-3 rounded-lg border-2 bg-[#FFAB91] px-4 py-3 text-sm font-medium text-[#0B4A47] transition ${
+                  operation === item
+                    ? "border-[#0F6B68] shadow-md"
+                    : "border-transparent hover:border-[#0F6B68]/50 hover:brightness-95"
+                }`}
+              >
+                <span className="text-xl" aria-hidden="true">
+                  {item === "Search" && "⌕"}
+                  {item === "Insert" && "⊕"}
+                  {item === "Delete" && "♜"}
+                  {item === "Traverse" && "♧"}
+                </span>
+                {item}
+              </button>
+            ))}
+          </div>
+        </section>
 
-      {/* Page heading */}
-      <header className="border-b border-slate-200 pb-7">
-        <h1 className="text-3xl font-semibold tracking-tight text-blue-600 lg:text-4xl">
-          Compare Operations
-        </h1>
-        <p className="mt-4 text-sm text-slate-600 md:text-base">
-          Select an operation and choose data structures to compare their performance.
-        </p>
-      </header>
+        {/* 2. Data structure selection */}
+        <section className="rounded-2xl bg-[#FFF4E6] p-6 shadow-sm">
+          <h2 className="mb-6 text-lg font-semibold text-[#0F6B68]">
+            2. Choose Data Structures to Compare
+          </h2>
 
-      {/* 1. Operation selection */}
-      <section className="border-b border-slate-200 py-7">
-        <h2 className="mb-5 text-lg font-semibold text-blue-600">
-          1. Select an Operation
-        </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {structures
+              .filter((structure) => structure !== "Array")
+              .map((structure) => {
+                const checked = selected.includes(structure);
 
-        <div className="flex flex-wrap gap-x-5 gap-y-2 sm:gap-x-10">
-          {operations.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setOperation(item)}
-              aria-pressed={operation === item}
-              className={`flex min-w-28 items-center justify-center gap-3 border-b-2 px-4 py-4 text-sm font-medium transition ${
-                operation === item
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-slate-700 hover:border-slate-300 hover:text-blue-600"
-              }`}
-            >
-              <span className="text-xl" aria-hidden="true">
-                {item === "Search" && "⌕"}
-                {item === "Insert" && "⊕"}
-                {item === "Delete" && "♜"}
-                {item === "Traverse" && "♧"}
-              </span>
-              {item}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* 2. Data structure selection */}
-      <section className="border-b border-slate-200 py-7">
-        <h2 className="mb-6 text-lg font-semibold text-blue-600">
-          2. Choose Data Structures to Compare
-        </h2>
-
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-6">
-          {structures
-            .filter((structure) => structure !== "Array")
-            .map((structure) => {
-              const checked = selected.includes(structure);
-
-              return (
-                <label
-                  key={structure}
-                  className="flex cursor-pointer flex-col items-center gap-3 text-center"
-                >
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleStructure(structure)}
-                      className="h-5 w-5 cursor-pointer accent-blue-600"
-                    />
-                    <span
-                      className={`text-3xl ${
-                        checked ? "text-blue-600" : "text-slate-600"
-                      }`}
-                      aria-hidden="true"
-                    >
-                      {icons[structure]}
-                    </span>
-                  </div>
-                  <span
-                    className={`text-sm font-medium ${
-                      checked ? "text-slate-900" : "text-slate-600"
+                return (
+                  <label
+                    key={structure}
+                    className={`flex cursor-pointer flex-col items-center gap-3 rounded-xl border p-3 text-center transition ${
+                      checked
+                        ? "border-[#0F6B68] bg-[#DDE1D3]"
+                        : "border-[#0F6B68]/20 hover:bg-[#EDE9DD]"
                     }`}
                   >
-                    {structure}
-                  </span>
-                </label>
-              );
-            })}
-        </div>
-
-        <p className="mt-5 text-sm text-slate-500">
-          Select at least two data structures.
-        </p>
-      </section>
-
-      {/* 3. Comparison results */}
-      <section className="py-7">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-blue-600">
-            3. Comparison Results{" "}
-            <span className="text-sm font-medium text-slate-600">
-              (Operation: {operation})
-            </span>
-          </h2>
-          <span className="text-sm text-slate-500">
-            n = number of elements
-          </span>
-        </div>
-
-        {selected.length < 2 ? (
-          <p className="py-12 text-center text-sm text-slate-500">
-            Select at least two data structures to compare their performance.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[650px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-200">
-                  <th className="min-w-36 px-3 py-4 font-semibold text-slate-800">
-                    Complexity
-                  </th>
-
-                  {selected.map((structure) => (
-                    <th
-                      key={structure}
-                      className="px-4 py-4 text-center font-semibold text-slate-800"
-                    >
-                      <span className="mb-2 block text-2xl font-normal text-slate-700">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleStructure(structure)}
+                        className="h-5 w-5 cursor-pointer accent-[#0F6B68]"
+                      />
+                      <span
+                        className={`text-3xl ${
+                          checked ? "text-[#0F6B68]" : "text-[#0B4A47]/60"
+                        }`}
+                        aria-hidden="true"
+                      >
                         {icons[structure]}
                       </span>
+                    </div>
+                    <span
+                      className={`text-sm font-medium ${
+                        checked ? "text-[#0B4A47]" : "text-[#0B4A47]/70"
+                      }`}
+                    >
                       {structure}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+                    </span>
+                  </label>
+                );
+              })}
+          </div>
 
-              <tbody>
-                {[
-                  { label: "Best Case", key: "best" as const },
-                  { label: "Average Case", key: "average" as const },
-                  { label: "Worst Case", key: "worst" as const },
-                  { label: "Space Complexity", key: "space" as const },
-                  { label: "Notes", key: "note" as const },
-                ].map((row) => (
-                  <tr
-                    key={row.key}
-                    className="border-b border-slate-200 hover:bg-blue-50/40"
-                  >
-                    <th className="px-3 py-4 font-medium text-slate-800">
-                      {row.label}
+          <p className="mt-5 text-sm text-[#0B4A47]/70">
+            Select at least two data structures.
+          </p>
+        </section>
+
+        {/* 3. Comparison results */}
+        <section className="rounded-2xl bg-[#FFF4E6] p-6 shadow-sm">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-[#0F6B68]">
+              3. Comparison Results{" "}
+              <span className="text-sm font-medium text-[#0B4A47]/70">
+                (Operation: {operation})
+              </span>
+            </h2>
+            <span className="text-sm text-[#0B4A47]/70">
+              n = number of elements
+            </span>
+          </div>
+
+          {selected.length < 2 ? (
+            <p className="py-12 text-center text-sm text-[#0B4A47]/70">
+              Select at least two data structures to compare their performance.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-[#0F6B68]/30">
+              <table className="w-full min-w-[650px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b-2 border-[#0F6B68]/40 bg-[#DDE1D3]">
+                    <th className="min-w-36 px-3 py-4 font-semibold text-[#0B4A47]">
+                      Complexity
                     </th>
 
                     {selected.map((structure) => (
-                      <td
+                      <th
                         key={structure}
-                        className={`px-4 py-4 text-center ${
-                          row.key === "note"
-                            ? "text-xs leading-5 text-slate-600"
-                            : "font-mono text-slate-800"
-                        }`}
+                        className="px-4 py-4 text-center font-semibold text-[#0B4A47]"
                       >
-                        {complexity[operation][structure][row.key]}
-                      </td>
+                        <span className="mb-2 block text-2xl font-normal text-[#0F6B68]">
+                          {icons[structure]}
+                        </span>
+                        {structure}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
 
-      {/* Insight */}
-      {selected.length >= 2 && (
-        <section className="flex items-start gap-4 border-t border-slate-200 py-7">
-          <span className="text-3xl text-blue-600" aria-hidden="true">
-            ♧
-          </span>
-          <div>
-            <h3 className="font-semibold text-blue-600">Insight</h3>
-            <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-700">
-              {operation === "Search" &&
-                "Search performance depends on how elements are organised. A balanced binary search tree can offer O(log n) average search time, while stacks, queues, and linked lists generally require O(n) time."}
-              {operation === "Insert" &&
-                "Insertion performance depends on where the element is added. Stack and queue operations are generally O(1) at their designated ends, while heaps and search trees may need to restore their ordering."}
-              {operation === "Delete" &&
-                "Deletion is often fastest when the target is already known or the structure supports removal at a specific end. Finding an arbitrary element may add extra time."}
-              {operation === "Traverse" &&
-                "Traversal visits the elements in a structure. Most linear structures take O(n) time, while graph traversal takes O(V + E) time."}
-            </p>
-          </div>
+                <tbody>
+                  {resultRows.map((row) => (
+                    <tr
+                      key={row.key}
+                      className="border-b border-[#0F6B68]/20 last:border-b-0 hover:bg-[#FFAB91]/20"
+                    >
+                      <th className="px-3 py-4 font-medium text-[#0B4A47]">
+                        {row.label}
+                      </th>
+
+                      {selected.map((structure) => (
+                        <td
+                          key={structure}
+                          className={`px-4 py-4 text-center ${
+                            row.key === "note"
+                              ? "text-xs leading-5 text-[#0B4A47]/75"
+                              : "font-mono text-[#0B4A47]"
+                          }`}
+                        >
+                          {complexity[operation][structure][row.key]}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
-      )}
 
-      <p className="border-t border-slate-200 py-4 text-xs leading-5 text-slate-500">
-        Complexity depends on implementation and input. Binary search tree
-        averages assume a balanced tree; graph traversal uses V vertices and
-        E edges. The displayed values are theoretical estimates.
-      </p>
-    </div>
-  </main>
-);
+        {/* Insight */}
+        {selected.length >= 2 && (
+          <section className="flex items-start gap-4 rounded-2xl bg-[#FFF4E6] p-6 shadow-sm">
+            <span className="text-3xl text-[#0F6B68]" aria-hidden="true">
+              ♧
+            </span>
+            <div>
+              <h3 className="font-semibold text-[#0F6B68]">Insight</h3>
+              <p className="mt-2 max-w-4xl text-sm leading-6 text-[#0B4A47]">
+                {operation === "Search" &&
+                  "Search performance depends on how elements are organised. A balanced binary search tree can offer O(log n) average search time, while stacks, queues, and linked lists generally require O(n) time."}
+                {operation === "Insert" &&
+                  "Insertion performance depends on where the element is added. Stack and queue operations are generally O(1) at their designated ends, while heaps and search trees may need to restore their ordering."}
+                {operation === "Delete" &&
+                  "Deletion is often fastest when the target is already known or the structure supports removal at a specific end. Finding an arbitrary element may add extra time."}
+                {operation === "Traverse" &&
+                  "Traversal visits the elements in a structure. Most linear structures take O(n) time, while graph traversal takes O(V + E) time."}
+              </p>
+            </div>
+          </section>
+        )}
+
+        <p className="border-t border-white/20 pt-4 text-xs leading-5 text-white/75">
+          Complexity depends on implementation and input. Binary search tree
+          averages assume a balanced tree; graph traversal uses V vertices and
+          E edges. The displayed values are theoretical estimates.
+        </p>
+      </div>
+    </main>
+  );
 }
