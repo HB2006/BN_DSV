@@ -1,5 +1,6 @@
 
 "use client"
+import { ModeToggle } from "@/components/global/mode-toggle"
 
 import {
   Binary,
