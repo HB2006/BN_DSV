@@ -9,6 +9,7 @@ import {
   List,
   SquareChevronLeft,
   SquareStack,
+  GitCompareArrows,
 } from "lucide-react"
 
 import {
@@ -52,10 +53,16 @@ const dataStructures = [
     description: "Graph data structure with vertices and edges",
   },
   {
-    name: "Heap",
+    name: "Priority Queues",
     url: "/visualizers/priorityQheap",
     icon: Database,
     description: "Binary heap with max-heap and min-heap variants",
+  },
+  {
+    name: "Comparisons",
+    url: "/visualizers/comparisons",
+    icon: GitCompareArrows,
+    description: "Comparison of data structures applying the same operation ",
   },
 ]
 

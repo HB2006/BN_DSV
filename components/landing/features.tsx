@@ -42,37 +42,7 @@ const features = [
     description: "Priority queue implemented using a binary tree with heap properties",
     image: "/ds-heap.png",
     url: "/visualizers/priorityQheap"
-  },
-  {
-    title: "Infix to Postfix Conversion",
-    description: "Visualize the conversion of infix expressions to postfix notation using a stack.",
-    image: "/ds-infix-to-postfix.png",
-    url: "/visualizer/stack-applications"
-  },
-  {
-    title: "Message Queue System",
-    description: "Use a message queue to simulate a producer-consumer system. Visualize message flow and queue operations.",
-    image: "/ds-mq.png",
-    url: "/visualizer/queue-applications"
-  },
-  {
-    title: "Polynomial Multiplication",
-    description: "See polynomial multiplication in action using linked list representation. Follow term-by-term multiplication steps.",
-    image: "/ds-polynomial-multiplication.png",
-    url: "/visualizer/polynomial"
-  },
-  {
-    title: "Huffman Coding",
-    description: "Huffman coding is a popular data compression technique that creates variable-length prefix codes based on the frequency of characters in the input text.",
-    image: "/ds-huffman.png",
-    url: "/visualizer/huffman"
-  },
-  {
-    title: "Dijkstra's Algorithm",
-    description: "Dijkstra's algorithm is a popular algorithm for finding the shortest path between nodes in a graph.",
-    image: "/ds-dijkstra.png",
-    url: "/visualizer/dijkstra"
-  },
+  }, 
 ];
 
 interface SelectedFeature {
