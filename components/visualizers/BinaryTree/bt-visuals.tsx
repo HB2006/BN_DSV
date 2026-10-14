@@ -60,9 +60,31 @@ type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
 
 type Step = { line: number | null; run: () => void };
 
+/* ---------- SHARED STYLE TOKENS (match the Stack / Queue pages) ---------- */
+
+// Card: soft teal border, rounded-2xl
+const cardCls = "rounded-2xl border-[#BFD8D8] bg-card shadow-none";
+
+// Inner boxes (stats, how-it-works, traversal, etc.)
+const innerBox = "rounded-xl border border-[#BFD8D8]";
+
+// Operation buttons: teal fill, tan/orange border, bold white text
+const opButton =
+  "h-8 w-full rounded-lg border border-[#E0A96D] bg-secondary text-xs font-semibold text-white hover:bg-secondary/90";
+
+// Playback buttons: coral fill, teal border (disabled state fades via opacity)
+const coralButton =
+  "gap-2 rounded-lg border border-[#0F6B6D] bg-[#F08080] font-semibold text-white hover:bg-[#E56B6B] hover:text-white disabled:opacity-50 dark:bg-[#F08080] dark:hover:bg-[#E56B6B]";
+
+// Zoom buttons: outlined teal, cream background
+const zoomButton =
+  "h-8 rounded-lg border border-[#0F6B6D] bg-background px-0 text-[#0F6B6D] hover:bg-background/80";
+
+const inputCls = "h-9 rounded-lg border-[#BFD8D8] bg-background text-sm";
+
 const pseudocode: Record<Operation, CodeInfo> = {
   insert: {
-    title: "Insert into Binary Search Tree",
+    title: "Insert",
     lines: [
       "insert(node, value):",
       "  if node is null: return new node(value)",
@@ -83,7 +105,7 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 
   delete: {
-    title: "Delete from Binary Search Tree",
+    title: "Delete",
     lines: [
       "delete(node, value):",
       "  if node is null: return null",
@@ -105,7 +127,7 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 
   search: {
-    title: "Search Binary Search Tree",
+    title: "Search",
     lines: [
       "search(node, target):",
       "  if node is null: return not found",
@@ -198,7 +220,7 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 
   clear: {
-    title: "Clear Binary Tree",
+    title: "Clear Tree",
     lines: ["root = null", "return"],
     explanation: [
       "Set the root reference to null.",
@@ -208,39 +230,49 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 };
 
-const complexityRows = [
+const complexityRows: {
+  operation: string;
+  keys: Operation[];
+  time: string;
+  why: string;
+}[] = [
   {
     operation: "Insert",
+    keys: ["insert"],
     time: "O(h)",
     why: "Follows one root-to-leaf path.",
   },
   {
     operation: "Delete",
+    keys: ["delete"],
     time: "O(h)",
     why: "Finds and updates a node along a path.",
   },
   {
     operation: "Search",
+    keys: ["search"],
     time: "O(h)",
     why: "Follows left/right comparisons.",
   },
   {
     operation: "Inorder / Preorder / Postorder",
+    keys: ["inorder", "preorder", "postorder"],
     time: "O(n)",
     why: "Visits every node once.",
   },
   {
     operation: "Level-Order",
+    keys: ["levelorder"],
     time: "O(n)",
     why: "Visits every node using a queue.",
   },
+  {
+    operation: "Clear Tree",
+    keys: ["clear"],
+    time: "O(1)",
+    why: "Reset the root reference.",
+  },
 ];
-
-const primaryButton =
-  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]";
-
-const secondaryButton =
-  "h-7 w-full justify-start border border-[#0F6B6D] bg-[#0F6B6D] px-2 text-[11px] text-white hover:border-[#0B5557] hover:bg-[#0B5557]";
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
@@ -276,8 +308,7 @@ function findNode(
   while (current) {
     if (value === current.value) return current;
 
-    current =
-      value < current.value ? current.left : current.right;
+    current = value < current.value ? current.left : current.right;
   }
 
   return null;
@@ -328,15 +359,20 @@ function cloneTree(root: TreeNode | null): TreeNode | null {
 
 function collectIds(root: TreeNode | null, out: number[] = []): number[] {
   if (!root) return out;
+
   out.push(root.id);
   collectIds(root.left, out);
   collectIds(root.right, out);
+
   return out;
 }
 
 type TraversalOrder = "inorder" | "preorder" | "postorder" | "levelorder";
 
-function treeVisit(root: TreeNode | null, order: TraversalOrder): TreeNode[] {
+function treeVisit(
+  root: TreeNode | null,
+  order: TraversalOrder
+): TreeNode[] {
   const result: TreeNode[] = [];
 
   if (!root) return result;
@@ -485,7 +521,10 @@ export function BinaryTreeVisualizer() {
       frame = 0;
       let bottom = 0;
 
-      for (const el of document.elementsFromPoint(window.innerWidth / 2, 2)) {
+      for (const el of document.elementsFromPoint(
+        window.innerWidth / 2,
+        2
+      )) {
         let node: Element | null = el;
 
         while (node && node !== document.body) {
@@ -511,6 +550,7 @@ export function BinaryTreeVisualizer() {
     };
 
     measure();
+
     window.addEventListener("scroll", schedule, {
       passive: true,
       capture: true,
@@ -526,8 +566,10 @@ export function BinaryTreeVisualizer() {
 
   const rootRef = useRef(root);
   rootRef.current = root;
+
   const nextIdRef = useRef(nextId);
   nextIdRef.current = nextId;
+
   const speedRef = useRef(animationSpeed);
   speedRef.current = animationSpeed;
 
@@ -556,13 +598,16 @@ export function BinaryTreeVisualizer() {
     if (prev === null) return undefined;
 
     const added = ids.filter((id) => !prev.has(id));
+
     if (added.length === 0) {
       setNewIds([]);
       return undefined;
     }
 
     setNewIds(added);
+
     const t = setTimeout(() => setNewIds([]), 1600);
+
     return () => clearTimeout(t);
   }, [root]);
 
@@ -571,6 +616,7 @@ export function BinaryTreeVisualizer() {
       if (playbackTimer.current !== null) {
         clearTimeout(playbackTimer.current);
       }
+
       if (traverseTimer.current !== null) {
         clearTimeout(traverseTimer.current);
       }
@@ -591,14 +637,17 @@ export function BinaryTreeVisualizer() {
         text,
         ...meta,
       };
+
       setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
     }
+
     setMessage(text);
   }
 
   function updateRoot(nextRoot: TreeNode | null) {
     const current = rootRef.current;
-    setUndoStack((old) => [...old, current]);
+
+    setUndoStack((old) => [...old, cloneTree(current)]);
     setRedoStack([]);
     rootRef.current = nextRoot;
     setRoot(nextRoot);
@@ -610,17 +659,21 @@ export function BinaryTreeVisualizer() {
   function abortReplay() {
     stopTraversalAnim();
     setVisitedIds([]);
+
     if (playbackTimer.current !== null) {
       clearTimeout(playbackTimer.current);
       playbackTimer.current = null;
     }
+
     setIsPlaying(false);
+
     if (replayOriginalRef.current) {
       const original = replayOriginalRef.current.tree;
       replayOriginalRef.current = null;
       rootRef.current = original;
       setRoot(original);
     }
+
     framesRef.current = null;
     frameIndexRef.current = 0;
     setReplayEntryId(null);
@@ -631,8 +684,11 @@ export function BinaryTreeVisualizer() {
   function runFrames() {
     const tick = () => {
       const frames = framesRef.current;
+
       if (!frames) return;
+
       const i = frameIndexRef.current;
+
       if (i >= frames.length) {
         playbackTimer.current = null;
         framesRef.current = null;
@@ -640,14 +696,17 @@ export function BinaryTreeVisualizer() {
         setIsPlaying(false);
         return;
       }
+
       frameIndexRef.current = i + 1;
       setActiveLine(frames[i].line);
       frames[i].run();
+
       playbackTimer.current = setTimeout(
         tick,
         1000 / Number(speedRef.current)
       );
     };
+
     tick();
   }
 
@@ -656,6 +715,8 @@ export function BinaryTreeVisualizer() {
       clearTimeout(playbackTimer.current);
       playbackTimer.current = null;
     }
+
+    stopTraversalAnim();
     setIsPlaying(false);
   }
 
@@ -680,8 +741,10 @@ export function BinaryTreeVisualizer() {
 
     stopTraversalAnim();
     setVisitedIds([]);
+
     const entries = history.slice().reverse();
-    const original = rootRef.current;
+    const original = cloneTree(rootRef.current);
+
     replayOriginalRef.current = { tree: original };
 
     const frames: Step[] = [];
@@ -689,7 +752,8 @@ export function BinaryTreeVisualizer() {
     frames.push({
       line: null,
       run: () => {
-        const start = entries[0].before;
+        const start = cloneTree(entries[0].before);
+
         rootRef.current = start;
         setRoot(start);
         setActiveNode(null);
@@ -702,6 +766,7 @@ export function BinaryTreeVisualizer() {
 
     entries.forEach((entry) => {
       const title = pseudocode[entry.op].title;
+
       frames.push({
         line: 0,
         run: () => {
@@ -713,11 +778,14 @@ export function BinaryTreeVisualizer() {
           setMessage(`Replaying: ${title}`);
         },
       });
+
       frames.push({
         line: entry.line,
         run: () => {
-          rootRef.current = entry.after;
-          setRoot(entry.after);
+          const next = cloneTree(entry.after);
+
+          rootRef.current = next;
+          setRoot(next);
           setActiveNode(entry.op === "delete" ? null : entry.activeId);
           setTraversal(entry.traversal);
           setVisitedIds(entry.path ?? []);
@@ -729,8 +797,10 @@ export function BinaryTreeVisualizer() {
     frames.push({
       line: null,
       run: () => {
-        rootRef.current = original;
-        setRoot(original);
+        const restored = cloneTree(original);
+
+        rootRef.current = restored;
+        setRoot(restored);
         replayOriginalRef.current = null;
         setReplayEntryId(null);
         setActiveNode(null);
@@ -746,27 +816,43 @@ export function BinaryTreeVisualizer() {
 
   function handleUndo() {
     abortReplay();
+
     if (undoStack.length === 0) return;
-    const current = rootRef.current;
+
+    const current = cloneTree(rootRef.current);
     const previous = undoStack[undoStack.length - 1];
+
     setRedoStack((old) => [...old, current]);
     setUndoStack((old) => old.slice(0, -1));
-    rootRef.current = previous;
-    setRoot(previous);
+
+    const restored = cloneTree(previous);
+
+    rootRef.current = restored;
+    setRoot(restored);
     setTraversal(null);
+    setVisitedIds([]);
+    setActiveNode(null);
     setMessage("Undo successful.");
   }
 
   function handleRedo() {
     abortReplay();
+
     if (redoStack.length === 0) return;
-    const current = rootRef.current;
+
+    const current = cloneTree(rootRef.current);
     const next = redoStack[redoStack.length - 1];
+
     setUndoStack((old) => [...old, current]);
     setRedoStack((old) => old.slice(0, -1));
-    rootRef.current = next;
-    setRoot(next);
+
+    const restored = cloneTree(next);
+
+    rootRef.current = restored;
+    setRoot(restored);
     setTraversal(null);
+    setVisitedIds([]);
+    setActiveNode(null);
     setMessage("Redo successful.");
   }
 
@@ -785,7 +871,8 @@ export function BinaryTreeVisualizer() {
     if (n === null) return;
 
     abortReplay();
-    const before = rootRef.current;
+
+    const before = cloneTree(rootRef.current);
     const existing = findNode(before, n);
 
     if (existing) {
@@ -806,13 +893,14 @@ export function BinaryTreeVisualizer() {
     setActiveLine(1);
     updateRoot(after);
     setActiveNode(id);
+
     nextIdRef.current = id + 1;
     setNextId(id + 1);
 
     record(`Inserted ${n} into the binary search tree.`, {
       op: "insert",
       before,
-      after,
+      after: cloneTree(after),
       activeId: id,
       traversal: null,
       line: 1,
@@ -825,7 +913,8 @@ export function BinaryTreeVisualizer() {
     if (n === null) return;
 
     abortReplay();
-    const before = rootRef.current;
+
+    const before = cloneTree(rootRef.current);
     const found = findNode(before, n);
 
     setOperation("delete");
@@ -845,7 +934,7 @@ export function BinaryTreeVisualizer() {
     record(`Deleted ${n} from the binary search tree.`, {
       op: "delete",
       before,
-      after,
+      after: cloneTree(after),
       activeId: found.id,
       traversal: null,
       line: 4,
@@ -858,7 +947,8 @@ export function BinaryTreeVisualizer() {
     if (n === null) return;
 
     abortReplay();
-    const before = rootRef.current;
+
+    const before = cloneTree(rootRef.current);
     const found = findNode(before, n);
     const line = found ? 2 : 1;
 
@@ -874,7 +964,7 @@ export function BinaryTreeVisualizer() {
       {
         op: "search",
         before,
-        after: before,
+        after: cloneTree(before),
         activeId: found?.id ?? null,
         traversal: null,
         line,
@@ -884,7 +974,8 @@ export function BinaryTreeVisualizer() {
 
   function traverse(order: TraversalOrder) {
     abortReplay();
-    const before = rootRef.current;
+
+    const before = cloneTree(rootRef.current);
 
     setOperation(order);
     setActiveLine(null);
@@ -895,7 +986,7 @@ export function BinaryTreeVisualizer() {
     const ids = visitNodes.map((node) => node.id);
     const visitLine = VISIT_LINE[order];
 
-    const labels = {
+    const labels: Record<TraversalOrder, string> = {
       inorder: "Inorder",
       preorder: "Preorder",
       postorder: "Postorder",
@@ -909,7 +1000,7 @@ export function BinaryTreeVisualizer() {
     record(finalText, {
       op: order,
       before,
-      after: before,
+      after: cloneTree(before),
       activeId: null,
       traversal: values,
       path: ids,
@@ -918,10 +1009,13 @@ export function BinaryTreeVisualizer() {
 
     if (values.length === 0) {
       setTraversal([]);
+      setVisitedIds([]);
       return;
     }
 
     setTraversal([]);
+    setVisitedIds([]);
+
     let step = 0;
 
     const tick = () => {
@@ -929,9 +1023,11 @@ export function BinaryTreeVisualizer() {
       setActiveNode(ids[step]);
       setVisitedIds(ids.slice(0, step + 1));
       setTraversal(values.slice(0, step + 1));
+
       setMessage(
         `${labels[order]}: visiting ${values[step]} (${step + 1} of ${values.length})`
       );
+
       step++;
 
       if (step < ids.length) {
@@ -940,12 +1036,15 @@ export function BinaryTreeVisualizer() {
           800 / Number(speedRef.current)
         );
       } else {
-        traverseTimer.current = setTimeout(() => {
-          traverseTimer.current = null;
-          setActiveNode(null);
-          setActiveLine(null);
-          setMessage(finalText);
-        }, 800 / Number(speedRef.current));
+        traverseTimer.current = setTimeout(
+          () => {
+            traverseTimer.current = null;
+            setActiveNode(null);
+            setActiveLine(null);
+            setMessage(finalText);
+          },
+          800 / Number(speedRef.current)
+        );
       }
     };
 
@@ -954,7 +1053,8 @@ export function BinaryTreeVisualizer() {
 
   function clearTree() {
     abortReplay();
-    const before = rootRef.current;
+
+    const before = cloneTree(rootRef.current);
 
     setOperation("clear");
     setActiveLine(0);
@@ -991,14 +1091,14 @@ export function BinaryTreeVisualizer() {
     }
 
     abortReplay();
-    const before = rootRef.current;
+
+    const before = cloneTree(rootRef.current);
     let generated: TreeNode | null = null;
     const used = new Set<number>();
     let id = nextIdRef.current;
 
     while (used.size < count) {
-      const n =
-        Math.floor(Math.random() * (max - min + 1)) + min;
+      const n = Math.floor(Math.random() * (max - min + 1)) + min;
 
       if (used.has(n)) continue;
 
@@ -1007,6 +1107,7 @@ export function BinaryTreeVisualizer() {
     }
 
     updateRoot(generated);
+
     nextIdRef.current = id;
     setNextId(id);
     setOperation("levelorder");
@@ -1017,7 +1118,7 @@ export function BinaryTreeVisualizer() {
       {
         op: "levelorder",
         before,
-        after: generated,
+        after: cloneTree(generated),
         activeId: null,
         traversal: null,
         line: null,
@@ -1029,661 +1130,742 @@ export function BinaryTreeVisualizer() {
     <main className="flex min-h-screen flex-col bg-background text-foreground">
       <style>{`
         @keyframes node-fade {
-          0%   { opacity: 0; }
+          0% { opacity: 0; }
           100% { opacity: 1; }
         }
+
         @keyframes node-glow {
-          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
           100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
         }
+
         @keyframes badge-pop {
-          0%   { transform: scale(0); }
-          60%  { transform: scale(1.25); }
+          0% { transform: scale(0); }
+          60% { transform: scale(1.25); }
           100% { transform: scale(1); }
         }
+
         @media (prefers-reduced-motion: reduce) {
-          .anim-new { animation: none !important; }
+          .anim-new {
+            animation: none !important;
+          }
+        }
+
+        /* Dark, always-visible scrollbars (sidebar + complexity list) */
+        .vis-scroll { scrollbar-width: thin; scrollbar-color: #3f4a4f transparent; }
+        .vis-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+        .vis-scroll::-webkit-scrollbar-track { background: transparent; }
+        .vis-scroll::-webkit-scrollbar-thumb {
+          background: #3f4a4f;
+          border-radius: 999px;
+          border: 3px solid transparent;
+          background-clip: content-box;
         }
       `}</style>
 
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
-            Binary Tree Visualizer
-          </h1>
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        {/* Header */}
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b py-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D]">
+              Binary Tree Visualizer
+            </h1>
 
-          <p className="text-xs text-[#0F6B6D] sm:text-sm">
-            Explore BST operations, traversals, pseudocode, and complexity.
-          </p>
-        </div>
+            <p className="text-xs text-[#0F6B6D]">
+              Explore BST operations, traversals, pseudocode, and complexity.
+            </p>
+          </div>
 
-        <Badge
-          variant="outline"
-          className="border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-        >
-          Binary Search Tree (BST)
-        </Badge>
-      </header>
+          <Badge
+            variant="outline"
+            className="rounded-full border-pink-300 bg-pink-50 text-pink-700 hover:bg-pink-50"
+          >
+            Binary Search Tree · BST
+          </Badge>
+        </header>
 
-      <div className="grid grid-cols-1 items-start gap-3 px-4 pb-6 sm:px-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:px-8">
-        <aside
-          style={{ "--sidebar-top": `${stickyTop}px` } as CSSProperties}
-          className="min-w-0 space-y-2 lg:sticky lg:top-[var(--sidebar-top)] lg:max-h-[calc(100vh_-_var(--sidebar-top)_-_0.75rem)] lg:overflow-y-auto lg:pr-1"
-        >
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="border-b border-border px-3 py-2">
-              <CardTitle className="text-sm">Operations</CardTitle>
-            </CardHeader>
+        {/* Main Layout */}
+        <div className="grid grid-cols-1 items-start gap-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          {/* Sidebar */}
+          <aside
+            style={{ "--sidebar-top": `${stickyTop}px` } as CSSProperties}
+            className="vis-scroll min-w-0 space-y-3 lg:sticky lg:top-[var(--sidebar-top)] lg:max-h-[calc(100vh_-_var(--sidebar-top)_-_0.75rem)] lg:overflow-y-scroll lg:pr-1"
+          >
+            {/* Operations (random generator lives in the same card) */}
+            <Card className={cardCls}>
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Operations
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Modify your tree
+                </CardDescription>
+              </CardHeader>
 
-            <CardContent className="space-y-2 px-3 py-3">
-              <div className="space-y-1">
-                <label htmlFor="tree-value" className="text-xs font-medium">
-                  Node value
-                </label>
+              <CardContent className="space-y-2 p-4 pt-1">
+                <div className="space-y-1">
+                  <label htmlFor="tree-value" className="text-xs font-medium">
+                    Node value
+                  </label>
 
-                <Input
-                  id="tree-value"
-                  type="number"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="Value"
-                  className="h-7 bg-background px-2 text-[11px]"
-                />
-              </div>
+                  <Input
+                    id="tree-value"
+                    type="number"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="Enter value"
+                    className={inputCls}
+                  />
+                </div>
 
-              <div className="space-y-1 pt-1">
-                <Button onClick={insert} className={secondaryButton} variant="outline">
-                  Insert
+                <Button onClick={insert} className={opButton}>
+                  + Insert
                 </Button>
 
-                <Button onClick={remove} className={secondaryButton} variant="outline">
-                  Delete
+                <Button onClick={remove} className={opButton}>
+                  − Delete
                 </Button>
 
-                <Button onClick={search} className={secondaryButton} variant="outline">
-                  Search
+                <Button onClick={search} className={opButton}>
+                  Search Value
                 </Button>
 
-                <Button onClick={() => traverse("inorder")} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={() => traverse("inorder")}
+                  className={opButton}
+                >
                   Inorder Traversal
                 </Button>
 
-                <Button onClick={() => traverse("preorder")} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={() => traverse("preorder")}
+                  className={opButton}
+                >
                   Preorder Traversal
                 </Button>
 
-                <Button onClick={() => traverse("postorder")} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={() => traverse("postorder")}
+                  className={opButton}
+                >
                   Postorder Traversal
                 </Button>
 
-                <Button onClick={() => traverse("levelorder")} className={secondaryButton} variant="outline">
+                <Button
+                  onClick={() => traverse("levelorder")}
+                  className={opButton}
+                >
                   Level-Order Traversal
                 </Button>
 
-                <Button
-                  onClick={clearTree}
-                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-[11px] text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-                  variant="outline"
-                >
+                <Button onClick={clearTree} className={opButton}>
                   Clear Tree
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="px-3 pb-1 pt-3">
-              <CardTitle className="text-sm">Random Nodes</CardTitle>
-            </CardHeader>
+                {/* Random tree */}
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="min-w-0 space-y-1">
+                    <label htmlFor="tree-min" className="text-xs font-medium">
+                      Minimum
+                    </label>
 
-            <CardContent className="space-y-2 px-3 pb-3">
-              <div className="space-y-1">
-                <label htmlFor="tree-count" className="text-[11px] font-medium text-muted-foreground">
-                  Number of nodes (1–20)
-                </label>
-
-                <Input
-                  id="tree-count"
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={randomCount}
-                  onChange={(e) => setRandomCount(e.target.value)}
-                  className="h-7 px-2 text-[11px]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="min-w-0 space-y-1">
-                  <label htmlFor="tree-min" className="text-[11px] font-medium text-muted-foreground">
-                    Minimum
-                  </label>
-
-                  <Input
-                    id="tree-min"
-                    type="number"
-                    value={minValue}
-                    onChange={(e) => setMinValue(e.target.value)}
-                    className="h-7 px-2 text-[11px]"
-                  />
-                </div>
-
-                <div className="min-w-0 space-y-1">
-                  <label htmlFor="tree-max" className="text-[11px] font-medium text-muted-foreground">
-                    Maximum
-                  </label>
-
-                  <Input
-                    id="tree-max"
-                    type="number"
-                    value={maxValue}
-                    onChange={(e) => setMaxValue(e.target.value)}
-                    className="h-7 px-2 text-[11px]"
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={generateRandom}
-                className={`h-7 w-full text-[11px] ${primaryButton}`}
-              >
-                Generate Tree
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
-              <div>
-                <CardTitle className="text-sm">History</CardTitle>
-                <CardDescription className="text-[11px]">
-                  Press Play to replay
-                </CardDescription>
-              </div>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  abortReplay();
-                  setHistory([]);
-                }}
-                className="h-6 px-2 text-[11px] text-muted-foreground"
-              >
-                Clear
-              </Button>
-            </CardHeader>
-
-            <CardContent className="px-3 pb-3">
-              {history.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Recent operations appear here.
-                </p>
-              ) : (
-                <ul className="max-h-32 space-y-1 overflow-y-auto pr-1">
-                  {history.map((item) => (
-                    <li
-                      key={item.id}
-                      className={`flex gap-1.5 rounded px-1 text-[11px] leading-snug transition-colors ${
-                        replayEntryId === item.id
-                          ? "bg-red-50 font-medium text-red-800 dark:bg-red-950/40 dark:text-red-200"
-                          : ""
-                      }`}
-                    >
-                      <span className="font-bold text-red-600">↳</span>
-                      <span className="min-w-0 break-words">{item.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Alert className="border-red-200 bg-red-50 px-3 py-2 text-red-950 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100">
-            <AlertDescription className="text-[11px] leading-snug">
-              <span className="font-semibold text-red-700 dark:text-red-300">
-                Status:{" "}
-              </span>
-              {message}
-            </AlertDescription>
-          </Alert>
-        </aside>
-
-        <section className="flex min-w-0 flex-col gap-3">
-          <Card className="min-w-0 overflow-hidden border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3 sm:px-5">
-              <div className="min-w-0">
-                <CardTitle className="text-base sm:text-lg">
-                  Visualization Playground
-                </CardTitle>
-
-                <CardDescription className="text-xs sm:text-sm">
-                  Explore the tree structure and traversal output.
-                </CardDescription>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setZoom((z) =>
-                      Math.max(
-                        MIN_ZOOM,
-                        Math.round((z - ZOOM_STEP) * 10) / 10
-                      )
-                    )
-                  }
-                  disabled={zoom <= MIN_ZOOM}
-                  aria-label="Zoom out"
-                  className="h-8 w-8 p-0 text-base"
-                >
-                  −
-                </Button>
-
-                <button
-                  type="button"
-                  onClick={() => setZoom(1)}
-                  title="Reset zoom"
-                  className="h-8 min-w-[3.5rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
-                >
-                  {Math.round(zoom * 100)}%
-                </button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setZoom((z) =>
-                      Math.min(
-                        MAX_ZOOM,
-                        Math.round((z + ZOOM_STEP) * 10) / 10
-                      )
-                    )
-                  }
-                  disabled={zoom >= MAX_ZOOM}
-                  aria-label="Zoom in"
-                  className="h-8 w-8 p-0 text-base"
-                >
-                  +
-                </Button>
-              </div>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handlePlay}
-                    disabled={isPlaying}
-                    className="gap-2"
-                  >
-                    <Play className="h-4 w-4" /> Play
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handlePause}
-                    disabled={!isPlaying}
-                    className="gap-2"
-                  >
-                    <Pause className="h-4 w-4" /> Pause
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleUndo}
-                    disabled={undoStack.length === 0}
-                    className="gap-2"
-                  >
-                    <Undo2 className="h-4 w-4" /> Undo
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRedo}
-                    disabled={redoStack.length === 0}
-                    className="gap-2"
-                  >
-                    <Redo2 className="h-4 w-4" /> Redo
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-muted-foreground" />
-                  <label htmlFor="animation-speed" className="text-sm">
-                    Speed
-                  </label>
-                  <select
-                    id="animation-speed"
-                    value={animationSpeed}
-                    onChange={(event) => setAnimationSpeed(event.target.value)}
-                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                  >
-                    <option value="0.5">0.5×</option>
-                    <option value="1">1×</option>
-                    <option value="2">2×</option>
-                    <option value="4">4×</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-muted/40 py-3 text-center">
-                <div className="min-w-0 px-2">
-                  <p className="text-xs text-muted-foreground">Root</p>
-                  <p className="break-words text-xl font-bold">
-                    {root ? root.value : "—"}
-                  </p>
-                </div>
-
-                <div className="min-w-0 px-2">
-                  <p className="text-xs text-muted-foreground">Nodes</p>
-                  <p className="text-xl font-bold">{stats.count}</p>
-                </div>
-
-                <div className="min-w-0 px-2">
-                  <p className="text-xs text-muted-foreground">Height</p>
-                  <p className="text-xl font-bold">{stats.height || "—"}</p>
-                </div>
-              </div>
-
-              <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-3 sm:h-[420px] sm:p-4">
-                {!root ? (
-                  <div className="flex h-full min-h-[250px] flex-col items-center justify-center text-center">
-                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-3xl text-red-600 dark:bg-red-950/50">
-                      ∅
-                    </div>
-
-                    <p className="text-lg font-semibold">
-                      Your tree is empty
-                    </p>
-
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Insert a value or generate a random tree to begin.
-                    </p>
+                    <Input
+                      id="tree-min"
+                      type="number"
+                      value={minValue}
+                      onChange={(e) => setMinValue(e.target.value)}
+                      className={inputCls}
+                    />
                   </div>
+
+                  <div className="min-w-0 space-y-1">
+                    <label htmlFor="tree-max" className="text-xs font-medium">
+                      Maximum
+                    </label>
+
+                    <Input
+                      id="tree-max"
+                      type="number"
+                      value={maxValue}
+                      onChange={(e) => setMaxValue(e.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="tree-count" className="text-xs font-medium">
+                    Number of nodes (1–20)
+                  </label>
+
+                  <Input
+                    id="tree-count"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={randomCount}
+                    onChange={(e) => setRandomCount(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+
+                <Button onClick={generateRandom} className={opButton}>
+                  Generate Tree
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* History */}
+            <Card className={cardCls}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                <div>
+                  <CardTitle className="text-sm font-medium">History</CardTitle>
+                  <CardDescription className="text-xs">
+                    Press Play to replay
+                  </CardDescription>
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    abortReplay();
+                    setHistory([]);
+                    setMessage("History cleared.");
+                  }}
+                  className="h-6 px-2 text-xs text-muted-foreground"
+                >
+                  Clear
+                </Button>
+              </CardHeader>
+
+              <CardContent className="p-4 pt-1">
+                {history.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Operations will appear here.
+                  </p>
                 ) : (
-                  <div
-                    className="relative mx-auto shrink-0"
-                    style={{
-                      width: `${treeCanvasWidth * zoom}px`,
-                      height: `${treeCanvasHeight * zoom}px`,
-                    }}
-                  >
-                    <div
-                      className="absolute left-0 top-0 origin-top-left"
-                      style={{
-                        width: `${treeCanvasWidth}px`,
-                        height: `${treeCanvasHeight}px`,
-                        transform: `scale(${zoom})`,
-                      }}
-                    >
-                      <svg
-                        className="absolute inset-0 h-full w-full overflow-visible"
-                        viewBox={`0 0 1000 ${treeCanvasHeight}`}
-                        preserveAspectRatio="none"
-                        aria-hidden="true"
+                  <div className="vis-scroll max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {history.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`border-l-2 pl-2 text-xs transition-colors ${
+                          replayEntryId === item.id
+                            ? "border-red-600 bg-red-50 font-medium text-red-800"
+                            : "border-red-200 text-muted-foreground"
+                        }`}
                       >
-                        {positioned
-                          .filter((item) => item.parentX !== undefined)
-                          .map((item) => (
-                            <line
-                              key={`edge-${item.node.id}`}
-                              x1={item.parentX}
-                              y1={item.parentY! + 28}
-                              x2={item.x}
-                              y2={item.y - 28}
-                              stroke={
-                                visitedIds.includes(item.node.id)
-                                  ? "#dc2626"
-                                  : "currentColor"
-                              }
-                              strokeOpacity={
-                                visitedIds.includes(item.node.id) ? 1 : 0.4
-                              }
-                              strokeWidth={
-                                visitedIds.includes(item.node.id) ? 4 : 2.2
-                              }
-                              style={{ transition: "stroke 300ms, stroke-width 300ms" }}
-                            />
-                          ))}
-                      </svg>
-
-                      {positioned.map(({ node, x, y }) => {
-                        const isNew = newIds.includes(node.id);
-                        const visitIndex = visitedIds.indexOf(node.id);
-                        const isVisited = visitIndex !== -1;
-
-                        return (
-                          <div
-                            key={node.id}
-                            className={`anim-new absolute z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-16 sm:w-16 ${
-                              activeNode === node.id
-                                ? "border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/20 dark:bg-red-950/50 dark:text-red-100"
-                                : isVisited
-                                  ? "border-red-400 bg-red-100 text-red-900 shadow-md dark:bg-red-950/60 dark:text-red-100"
-                                  : node.id === root?.id
-                                  ? "border-red-500 bg-red-50 text-red-950 shadow-md dark:bg-red-950/40 dark:text-red-100"
-                                  : "border-border bg-card shadow-sm"
-                            }`}
-                            style={{
-                              left: `${x}px`,
-                              top: `${y}px`,
-                              ...(isNew
-                                ? {
-                                    animation:
-                                      "node-fade 500ms ease-out both, node-glow 1200ms ease-out 400ms",
-                                  }
-                                : {}),
-                            }}
-                          >
-                            <span className="text-lg font-bold leading-none sm:text-xl">
-                              {node.value}
-                            </span>
-
-                            {activeNode === node.id && (
-                              <span className="absolute -top-4 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
-                                ACTIVE
-                              </span>
-                            )}
-
-                            {isVisited && (
-                              <span className="absolute -bottom-2 -left-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
-                                {visitIndex + 1}
-                              </span>
-                            )}
-
-                            {isNew && (
-                              <span
-                                className="absolute -right-3 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
-                                style={{
-                                  animation: "badge-pop 400ms ease-out both",
-                                }}
-                              >
-                                NEW
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                        {item.text}
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="rounded-xl border border-border bg-card px-4 py-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Traversal Output</p>
+            {/* Status */}
+            <Alert className="rounded-xl border-red-100 bg-red-50/60">
+              <AlertDescription className="text-xs leading-relaxed text-red-900">
+                {message}
+              </AlertDescription>
+            </Alert>
+          </aside>
 
-                  <Badge variant="outline" className="text-xs">
-                    {traversal?.length ?? 0} values
-                  </Badge>
+          {/* Main Content */}
+          <section className="flex min-w-0 flex-col gap-4">
+            {/* Visualization Card */}
+            <Card className={`${cardCls} min-w-0 overflow-hidden`}>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b border-[#BFD8D8] p-4">
+                <div className="min-w-0">
+                  <CardTitle className="text-base font-medium">
+                    Learn, Play and Create
+                  </CardTitle>
+
+                  <CardDescription className="text-xs">
+                    Explore the tree structure and traversal output.
+                  </CardDescription>
                 </div>
 
-                <p className="break-words font-mono text-sm text-muted-foreground">
-                  {traversal !== null
-                    ? traversal.length
-                      ? traversal.join(" → ")
-                      : "Empty"
-                    : "Choose a traversal operation to see its output."}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
-            <Card className="min-w-0 border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle className="text-base">Pseudocode</CardTitle>
-
-                  <Badge
+                {/* Zoom Controls */}
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
                     variant="outline"
-                    className="border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                    size="sm"
+                    onClick={() =>
+                      setZoom((z) =>
+                        Math.max(
+                          MIN_ZOOM,
+                          Math.round((z - ZOOM_STEP) * 10) / 10
+                        )
+                      )
+                    }
+                    disabled={zoom <= MIN_ZOOM}
+                    aria-label="Zoom out"
+                    className={`${zoomButton} w-8`}
                   >
-                    {selectedCode.title}
-                  </Badge>
+                    −
+                  </Button>
+
+                  <span className="min-w-12 text-center text-xs text-muted-foreground">
+                    {Math.round(zoom * 100)}%
+                  </span>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setZoom((z) =>
+                        Math.min(
+                          MAX_ZOOM,
+                          Math.round((z + ZOOM_STEP) * 10) / 10
+                        )
+                      )
+                    }
+                    disabled={zoom >= MAX_ZOOM}
+                    aria-label="Zoom in"
+                    className={`${zoomButton} w-8`}
+                  >
+                    +
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setZoom(1)}
+                    className={`${zoomButton} px-2 text-xs`}
+                  >
+                    Reset
+                  </Button>
                 </div>
               </CardHeader>
 
-              <CardContent className="min-w-0 space-y-4 p-4">
-                <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-slate-100 shadow-inner sm:text-sm">
-                  <div className="min-w-max space-y-1 font-mono">
+              <CardContent className="flex flex-col gap-3 p-4">
+                {/* Playback Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#BFD8D8] bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handlePlay}
+                      disabled={isPlaying}
+                      className={coralButton}
+                    >
+                      <Play className="h-4 w-4" />
+                      Play
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handlePause}
+                      disabled={!isPlaying}
+                      className={coralButton}
+                    >
+                      <Pause className="h-4 w-4" />
+                      Pause
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleUndo}
+                      disabled={undoStack.length === 0}
+                      className={coralButton}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      Undo
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRedo}
+                      disabled={redoStack.length === 0}
+                      className={coralButton}
+                    >
+                      <Redo2 className="h-4 w-4" />
+                      Redo
+                    </Button>
+                  </div>
+
+                  {/* Animation Speed */}
+                  <div className="flex items-center gap-2">
+                    <Gauge className="h-4 w-4 text-muted-foreground" />
+
+                    <label htmlFor="animation-speed" className="text-sm">
+                      Speed
+                    </label>
+
+                    <select
+                      id="animation-speed"
+                      value={animationSpeed}
+                      onChange={(event) =>
+                        setAnimationSpeed(event.target.value)
+                      }
+                      className="h-9 rounded-lg border border-[#BFD8D8] bg-background px-3 text-sm"
+                    >
+                      <option value="0.5">0.5×</option>
+                      <option value="1">1×</option>
+                      <option value="2">2×</option>
+                      <option value="4">4×</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tree Statistics */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Root
+                    </p>
+                    <p className="truncate text-xl font-medium">
+                      {root ? root.value : "—"}
+                    </p>
+                  </div>
+
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Nodes
+                    </p>
+                    <p className="text-xl font-medium">{stats.count}</p>
+                  </div>
+
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Height
+                    </p>
+                    <p className="text-xl font-medium">
+                      {stats.height || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tree Canvas */}
+                <div
+                  className={`${innerBox} flex min-w-0 flex-col overflow-hidden bg-card`}
+                >
+                  <div className="flex items-center justify-between border-b border-[#BFD8D8] px-3 py-2">
+                    <span className="text-xs font-medium">Tree Structure</span>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full text-[10px]"
+                    >
+                      BST
+                    </Badge>
+                  </div>
+
+                  <div className="vis-scroll h-[350px] overflow-auto p-3 sm:h-[420px] sm:p-4">
+                    {!root ? (
+                      <div className="flex h-full min-h-[250px] flex-col items-center justify-center text-center">
+                        <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
+                          ∅
+                        </div>
+
+                        <p className="text-sm font-medium">Tree is empty</p>
+
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Insert a value or generate a random tree to begin.
+                        </p>
+                      </div>
+                    ) : (
+                      <div
+                        className="relative mx-auto shrink-0"
+                        style={{
+                          width: `${treeCanvasWidth * zoom}px`,
+                          height: `${treeCanvasHeight * zoom}px`,
+                        }}
+                      >
+                        <div
+                          className="absolute left-0 top-0 origin-top-left"
+                          style={{
+                            width: `${treeCanvasWidth}px`,
+                            height: `${treeCanvasHeight}px`,
+                            transform: `scale(${zoom})`,
+                          }}
+                        >
+                          <svg
+                            className="absolute inset-0 h-full w-full overflow-visible"
+                            viewBox={`0 0 1000 ${treeCanvasHeight}`}
+                            preserveAspectRatio="none"
+                            aria-hidden="true"
+                          >
+                            {positioned
+                              .filter((item) => item.parentX !== undefined)
+                              .map((item) => {
+                                const isVisited = visitedIds.includes(
+                                  item.node.id
+                                );
+
+                                return (
+                                  <line
+                                    key={`edge-${item.node.id}`}
+                                    x1={item.parentX}
+                                    y1={item.parentY! + 28}
+                                    x2={item.x}
+                                    y2={item.y - 28}
+                                    stroke={
+                                      isVisited ? "#dc2626" : "currentColor"
+                                    }
+                                    strokeOpacity={isVisited ? 1 : 0.4}
+                                    strokeWidth={isVisited ? 4 : 2.2}
+                                    style={{
+                                      transition:
+                                        "stroke 300ms, stroke-width 300ms",
+                                    }}
+                                  />
+                                );
+                              })}
+                          </svg>
+
+                          {positioned.map(({ node, x, y }) => {
+                            const isNew = newIds.includes(node.id);
+                            const visitIndex = visitedIds.indexOf(node.id);
+                            const isVisited = visitIndex !== -1;
+
+                            return (
+                              <div
+                                key={node.id}
+                                className={`anim-new absolute z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 transition-colors duration-300 sm:h-16 sm:w-16 ${
+                                  activeNode === node.id
+                                    ? "border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
+                                    : isVisited
+                                      ? "border-red-400 bg-red-100 text-red-900"
+                                      : node.id === root?.id
+                                        ? "border-red-400 bg-red-50 text-red-800"
+                                        : "border-border bg-card text-foreground"
+                                }`}
+                                style={{
+                                  left: `${x}px`,
+                                  top: `${y}px`,
+                                  ...(isNew
+                                    ? {
+                                        animation:
+                                          "node-fade 500ms ease-out both, node-glow 1200ms ease-out 400ms",
+                                      }
+                                    : {}),
+                                }}
+                              >
+                                <span className="text-lg font-bold leading-none sm:text-xl">
+                                  {node.value}
+                                </span>
+
+                                {activeNode === node.id && (
+                                  <span className="absolute -top-4 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                                    ACTIVE
+                                  </span>
+                                )}
+
+                                {isVisited && (
+                                  <span className="absolute -bottom-2 -left-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                                    {visitIndex + 1}
+                                  </span>
+                                )}
+
+                                {isNew && (
+                                  <span
+                                    className="absolute -right-3 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                    style={{
+                                      animation:
+                                        "badge-pop 400ms ease-out both",
+                                    }}
+                                  >
+                                    NEW
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Traversal Output */}
+                <div className={`${innerBox} bg-card p-3`}>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold">
+                      Traversal / Operation Output
+                    </span>
+
+                    <Badge
+                      variant="outline"
+                      className="rounded-full font-mono text-[10px]"
+                    >
+                      {traversal?.length ?? 0} values
+                    </Badge>
+                  </div>
+
+                  {traversal !== null ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {traversal.length > 0 ? (
+                        traversal.map((v, index) => (
+                          <span
+                            key={`${v}-${index}-traversal`}
+                            className="flex items-center gap-2"
+                          >
+                            <span className="rounded-md bg-red-100 px-2 py-1 font-mono text-xs font-medium text-red-800">
+                              {v}
+                            </span>
+
+                            {index < traversal.length - 1 && (
+                              <span className="text-xs text-muted-foreground">
+                                →
+                              </span>
+                            )}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Empty
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Choose a traversal operation to see its output.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pseudocode and Complexity */}
+            <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2">
+              {/* Pseudocode */}
+              <Card
+                className={`${cardCls} flex min-w-0 flex-col overflow-hidden`}
+              >
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-sm font-medium">
+                      Pseudocode
+                    </CardTitle>
+
+                    <Badge
+                      variant="outline"
+                      className="max-w-[65%] truncate rounded-full border-[#BFD8D8] text-xs"
+                    >
+                      {selectedCode.title}
+                    </Badge>
+                  </div>
+
+                  <CardDescription className="text-xs">
+                    Follow the selected operation step by step.
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="flex min-w-0 flex-col gap-3 p-4 pt-1">
+                  <div className="vis-scroll max-h-[260px] overflow-auto rounded-xl bg-[#020617] p-4 font-mono text-xs text-slate-100">
                     {selectedCode.lines.map((line, index) => (
                       <div
                         key={`${operation}-${index}`}
-                        className={`flex items-start gap-3 rounded px-2 py-1 transition-colors duration-200 ${
+                        className={`flex min-w-max gap-3 rounded px-2 py-1 ${
                           activeLine === index
-                            ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
-                            : "hover:bg-[#D8A7B1]/10"
+                            ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
+                            : ""
                         }`}
                       >
                         <span className="w-5 shrink-0 select-none text-right text-slate-500">
-                          {activeLine === index ? "▶" : index + 1}
+                          {index + 1}
                         </span>
 
                         <span
-                          className={
+                          className={`whitespace-pre ${
                             line.trim().startsWith("//")
-                              ? "text-emerald-300"
-                              : line.includes("return")
-                                ? "text-pink-300"
-                                : line.includes("if ") ||
-                                    line.includes("while ") ||
-                                    line.includes("for ")
-                                  ? "text-amber-200"
-                                  : "text-sky-100"
-                          }
+                              ? "italic text-sky-400/70"
+                              : ""
+                          }`}
                         >
                           {line || " "}
                         </span>
                       </div>
                     ))}
                   </div>
-                </div>
 
-                <div className="rounded-xl border border-border bg-muted/30 p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-300">
-                    How it works
-                  </h3>
-
-                  <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed">
-                    {selectedCode.explanation.map((step, index) => (
-                      <li key={`${operation}-step-${index}`}>{step}</li>
-                    ))}
-                  </ol>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="min-w-0 border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-3">
-                <CardTitle className="text-base">Time Complexity</CardTitle>
-
-                <CardDescription className="text-xs sm:text-sm">
-                  Complexity depends on the height of the tree.
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-4 p-4">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-4">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">
-                      {selectedCode.title}
-                    </p>
-
-                    <p className="mt-1 text-3xl font-bold text-red-700 dark:text-red-400">
-                      {selectedCode.complexity}
-                    </p>
+                  <div className={`${innerBox} bg-muted/30 p-4`}>
+                    <p className="mb-2 text-xs font-medium">How it works</p>
+                    <ol className="list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                      {selectedCode.explanation.map((step, index) => (
+                        <li key={`${operation}-step-${index}`}>{step}</li>
+                      ))}
+                    </ol>
                   </div>
+                </CardContent>
+              </Card>
 
-                  <p className="max-w-[55%] text-right text-xs text-muted-foreground">
-                    {selectedCode.complexity === "O(1)"
-                      ? "Constant time."
-                      : selectedCode.complexity === "O(h)"
-                        ? "Proportional to tree height h."
-                        : "Visits each node once."}
-                  </p>
-                </div>
+              {/* Time Complexity */}
+              <Card
+                className={`${cardCls} flex min-w-0 flex-col overflow-hidden md:max-h-[560px]`}
+              >
+                <CardHeader className="p-4 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Time Complexity
+                  </CardTitle>
 
-                <div className="overflow-x-auto rounded-xl border border-border">
-                  <table className="w-full border-collapse text-left text-xs sm:text-sm">
-                    <thead>
-                      <tr className="bg-muted/60">
-                        <th className="border-b border-border p-3">
-                          Operation
-                        </th>
-                        <th className="border-b border-border p-3">Time</th>
-                        <th className="border-b border-border p-3">Why?</th>
-                      </tr>
-                    </thead>
+                  <CardDescription className="text-xs">
+                    Performance depends on the height of the tree
+                  </CardDescription>
+                </CardHeader>
 
-                    <tbody>
-                      {complexityRows.map((row) => (
-                        <tr
+                <CardContent className="vis-scroll flex-1 overflow-y-scroll p-4 pt-1">
+                  <div className="space-y-3">
+                    {complexityRows.map((row) => {
+                      const isActive = row.keys.includes(operation);
+
+                      return (
+                        <div
                           key={row.operation}
-                          className="transition-colors hover:bg-muted/40"
+                          className={`rounded-xl border p-4 transition-colors ${
+                            isActive
+                              ? "border-red-300 bg-red-50"
+                              : "border-[#BFD8D8] bg-card"
+                          }`}
                         >
-                          <td className="border-b border-border p-3 font-medium">
-                            {row.operation}
-                          </td>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-medium">
+                              {row.operation}
+                            </p>
 
-                          <td className="border-b border-border p-3">
                             <Badge
                               variant="outline"
-                              className={
-                                row.time === "O(h)"
-                                  ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
-                                  : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-                              }
+                              className={`rounded-full font-mono text-[10px] ${
+                                isActive
+                                  ? "border-red-300 text-red-600"
+                                  : "border-[#BFD8D8]"
+                              }`}
                             >
                               {row.time}
                             </Badge>
-                          </td>
+                          </div>
 
-                          <td className="border-b border-border p-3 text-muted-foreground">
+                          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                             {row.why}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          </p>
+                        </div>
+                      );
+                    })}
 
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  Here, <strong>h</strong> is the tree height and{" "}
-                  <strong>n</strong> is the number of nodes. A balanced BST has
-                  height O(log n); a skewed BST can have height O(n).
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+                    <div className={`${innerBox} bg-muted/30 p-4`}>
+                      <p className="text-xs font-medium">Space Complexity</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        A tree with n nodes requires O(n) space. Here,{" "}
+                        <strong>h</strong> is the tree height and{" "}
+                        <strong>n</strong> is the number of nodes. A balanced
+                        BST has height O(log n); a skewed BST can have height
+                        O(n).
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );

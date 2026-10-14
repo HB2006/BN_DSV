@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -37,16 +38,21 @@ type HistoryEntry = {
   traversal: string[] | null;
   line: number;
 };
-// Coral peach style for the Play / Pause / Undo / Redo buttons
-const coralButton =
-  "border-[#FF9E80] bg-[#FFAB91] text-[#0B4A47] hover:bg-[#FF9E80] hover:text-[#0B4A47] dark:border-[#FF9E80] dark:bg-[#FFAB91] dark:text-[#0B4A47] dark:hover:bg-[#FF9E80]";
-type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
 
+type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
 type Step = { line: number | null; run: () => void };
+
+const coralButton =
+  "bg-[#F08080] text-white hover:bg-[#E56B6B] dark:bg-[#F08080] dark:hover:bg-[#E56B6B]";
 
 const pseudocode: Record<
   Operation,
-  { title: string; lines: string[]; explanation: string }
+  {
+    title: string;
+    lines: string[];
+    explanation: string;
+    complexity: string;
+  }
 > = {
   enqueue: {
     title: "Enqueue",
@@ -64,6 +70,7 @@ const pseudocode: Record<
     ],
     explanation:
       "Enqueue adds a new element at the rear of the queue. The front remains unchanged unless the queue was empty.",
+    complexity: "O(1)",
   },
   dequeue: {
     title: "Dequeue",
@@ -81,6 +88,7 @@ const pseudocode: Record<
     ],
     explanation:
       "Dequeue removes the front element, following FIFO (First In, First Out).",
+    complexity: "O(1)",
   },
   peek: {
     title: "Peek",
@@ -93,6 +101,7 @@ const pseudocode: Record<
     ],
     explanation:
       "Peek reads the front element without removing it. The queue remains unchanged.",
+    complexity: "O(1)",
   },
   search: {
     title: "Search",
@@ -110,6 +119,7 @@ const pseudocode: Record<
     ],
     explanation:
       "Search visits each node from front to rear. It returns the zero-based position or -1 if the target is not found.",
+    complexity: "O(n)",
   },
   traverse: {
     title: "Traverse",
@@ -124,6 +134,7 @@ const pseudocode: Record<
     ],
     explanation:
       "Traversal visits every queue element in FIFO order, from the front to the rear.",
+    complexity: "O(n)",
   },
   clear: {
     title: "Clear Queue",
@@ -135,24 +146,48 @@ const pseudocode: Record<
       "    size = 0",
       "    return queue",
     ],
-    explanation: "Clearing removes all elements and leaves the queue empty.",
+    explanation:
+      "Clearing removes all elements and leaves the queue empty.",
+    complexity: "O(1)",
   },
 };
 
-const complexity = [
-  { operation: "Enqueue", time: "O(1)", why: "Add a node at the rear." },
-  { operation: "Dequeue", time: "O(1)", why: "Remove the front element." },
-  { operation: "Peek", time: "O(1)", why: "Read the front element directly." },
+const complexityRows = [
+  {
+    operation: "Enqueue",
+    key: "enqueue",
+    time: "O(1)",
+    why: "Add a node at the rear.",
+  },
+  {
+    operation: "Dequeue",
+    key: "dequeue",
+    time: "O(1)",
+    why: "Remove the front element.",
+  },
+  {
+    operation: "Peek",
+    key: "peek",
+    time: "O(1)",
+    why: "Read the front element directly.",
+  },
   {
     operation: "Search",
+    key: "search",
     time: "O(n)",
     why: "The target may be anywhere in the queue.",
   },
-  { operation: "Traversal", time: "O(n)", why: "Visit every node once." },
   {
-    operation: "Clear",
+    operation: "Traverse",
+    key: "traverse",
+    time: "O(n)",
+    why: "Visit every node once.",
+  },
+  {
+    operation: "Clear Queue",
+    key: "clear",
     time: "O(1)",
-    why: "Reset the queue to an empty array.",
+    why: "Reset the queue to an empty state.",
   },
 ];
 
@@ -175,9 +210,11 @@ export default function QueueVisualizer() {
   const [queue, setQueue] = useState<ListNode[]>([]);
   const [nextId, setNextId] = useState(1);
 
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = useState("40");
   const [searchValue, setSearchValue] = useState("");
-  const [message, setMessage] = useState("Queue is ready.");
+  const [message, setMessage] = useState(
+    "Choose an operation to get started."
+  );
   const [operation, setOperation] = useState<Operation>("enqueue");
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const [highlightedId, setHighlightedId] = useState<NodeKey | null>(null);
@@ -190,50 +227,48 @@ export default function QueueVisualizer() {
   const [randomMin, setRandomMin] = useState("1");
   const [randomMax, setRandomMax] = useState("99");
 
-  // Playback + undo/redo state
   const [isPlaying, setIsPlaying] = useState(false);
   const [animationSpeed, setAnimationSpeed] = useState("1");
   const [undoStack, setUndoStack] = useState<ListNode[][]>([]);
   const [redoStack, setRedoStack] = useState<ListNode[][]>([]);
+  const [newIds, setNewIds] = useState<NodeKey[]>([]);
 
-  // Latest-value refs so timer callbacks never see stale state
   const queueRef = useRef(queue);
   queueRef.current = queue;
+
   const nextIdRef = useRef(nextId);
   nextIdRef.current = nextId;
+
   const speedRef = useRef(animationSpeed);
   speedRef.current = animationSpeed;
 
-  // Replay machinery
   const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const framesRef = useRef<Step[] | null>(null);
   const frameIndexRef = useRef(0);
   const replayOriginalRef = useRef<ListNode[] | null>(null);
   const historyIdRef = useRef(1);
-
-  // New-node animation tracking
-  const [newIds, setNewIds] = useState<NodeKey[]>([]);
   const prevIdsRef = useRef<Set<NodeKey>>(new Set());
 
   const selectedCode = pseudocode[operation];
 
-  // Detect any node that appeared (enqueue, redo, undo of dequeue, generate, replay)
   useEffect(() => {
     const prev = prevIdsRef.current;
     const ids = queue.map((node, i) => getNodeId(node, i));
     const added = ids.filter((id) => !prev.has(id));
+
     prevIdsRef.current = new Set(ids);
 
     if (added.length === 0) {
       setNewIds([]);
       return;
     }
+
     setNewIds(added);
-    const t = setTimeout(() => setNewIds([]), 1600);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setNewIds([]), 1600);
+
+    return () => clearTimeout(timer);
   }, [queue]);
 
-  // Clear playback timer on unmount
   useEffect(() => {
     return () => {
       if (playbackTimer.current !== null) {
@@ -249,13 +284,16 @@ export default function QueueVisualizer() {
         text,
         ...meta,
       };
+
       setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
     }
+
     setMessage(text);
   }
 
   function updateQueue(nextQueue: ListNode[]) {
     const current = queueRef.current;
+
     setUndoStack((old) => [...old, [...current]]);
     setRedoStack([]);
     queueRef.current = nextQueue;
@@ -266,19 +304,21 @@ export default function QueueVisualizer() {
 
   /* ---------- HISTORY REPLAY ---------- */
 
-  // Stops any replay and puts the real queue back
   function abortReplay() {
     if (playbackTimer.current !== null) {
       clearTimeout(playbackTimer.current);
       playbackTimer.current = null;
     }
+
     setIsPlaying(false);
+
     if (replayOriginalRef.current) {
       const original = replayOriginalRef.current;
       replayOriginalRef.current = null;
       queueRef.current = original;
       setQueue(original);
     }
+
     framesRef.current = null;
     frameIndexRef.current = 0;
     setReplayEntryId(null);
@@ -289,8 +329,11 @@ export default function QueueVisualizer() {
   function runFrames() {
     const tick = () => {
       const frames = framesRef.current;
+
       if (!frames) return;
+
       const i = frameIndexRef.current;
+
       if (i >= frames.length) {
         playbackTimer.current = null;
         framesRef.current = null;
@@ -298,14 +341,17 @@ export default function QueueVisualizer() {
         setIsPlaying(false);
         return;
       }
+
       frameIndexRef.current = i + 1;
       setActiveLine(frames[i].line);
       frames[i].run();
+
       playbackTimer.current = setTimeout(
         tick,
         1000 / Number(speedRef.current)
       );
     };
+
     tick();
   }
 
@@ -314,13 +360,13 @@ export default function QueueVisualizer() {
       clearTimeout(playbackTimer.current);
       playbackTimer.current = null;
     }
+
     setIsPlaying(false);
   }
 
   function handlePlay() {
     if (isPlaying) return;
 
-    // Resume a paused replay
     if (
       framesRef.current &&
       frameIndexRef.current < framesRef.current.length
@@ -337,13 +383,12 @@ export default function QueueVisualizer() {
       return;
     }
 
-    const entries = history.slice().reverse(); // oldest first
+    const entries = history.slice().reverse();
     const original = queueRef.current;
     replayOriginalRef.current = original;
 
     const frames: Step[] = [];
 
-    // 1. Rewind to the state before the first recorded operation
     frames.push({
       line: null,
       run: () => {
@@ -357,32 +402,36 @@ export default function QueueVisualizer() {
       },
     });
 
-    // 2. Two frames per recorded operation: announce, then apply
     entries.forEach((entry) => {
       const title = pseudocode[entry.op].title;
+
       frames.push({
         line: 1,
         run: () => {
           setOperation(entry.op);
           setReplayEntryId(entry.id);
           setTraversal(null);
-          setHighlightedId(entry.op === "dequeue" ? entry.activeId : null);
+          setHighlightedId(
+            entry.op === "dequeue" ? entry.activeId : null
+          );
           setMessage(`Replaying: ${title}`);
         },
       });
+
       frames.push({
         line: entry.line,
         run: () => {
           queueRef.current = entry.after;
           setQueue(entry.after);
-          setHighlightedId(entry.op === "dequeue" ? null : entry.activeId);
+          setHighlightedId(
+            entry.op === "dequeue" ? null : entry.activeId
+          );
           setTraversal(entry.traversal);
           setMessage(entry.text);
         },
       });
     });
 
-    // 3. Put the real queue back (matters if you used Undo/Redo earlier)
     frames.push({
       line: null,
       run: () => {
@@ -405,33 +454,43 @@ export default function QueueVisualizer() {
 
   function handleUndo() {
     abortReplay();
+
     if (undoStack.length === 0) return;
+
     const current = queueRef.current;
     const previous = undoStack[undoStack.length - 1];
+
     setRedoStack((old) => [...old, [...current]]);
     setUndoStack((old) => old.slice(0, -1));
+
     queueRef.current = [...previous];
     setQueue([...previous]);
     setTraversal(null);
+    setHighlightedId(null);
     setMessage("Undo successful.");
   }
 
   function handleRedo() {
     abortReplay();
+
     if (redoStack.length === 0) return;
+
     const current = queueRef.current;
     const next = redoStack[redoStack.length - 1];
+
     setUndoStack((old) => [...old, [...current]]);
     setRedoStack((old) => old.slice(0, -1));
+
     queueRef.current = [...next];
     setQueue([...next]);
     setTraversal(null);
+    setHighlightedId(null);
     setMessage("Redo successful.");
   }
 
-  /* ---------- OPERATIONS ---------- */
+  /* ---------- QUEUE OPERATIONS ---------- */
 
-  const handleEnqueue = () => {
+  function handleEnqueue() {
     if (inputValue.trim() === "") {
       setMessage("Please enter a value to enqueue.");
       return;
@@ -445,6 +504,7 @@ export default function QueueVisualizer() {
     }
 
     abortReplay();
+
     const before = queueRef.current;
     const id = nextIdRef.current;
     const after = enqueue(before, value, id);
@@ -454,11 +514,12 @@ export default function QueueVisualizer() {
     setActiveLine(6);
     updateQueue(after);
     setHighlightedId(newNodeId);
+
     nextIdRef.current = id + 1;
     setNextId(id + 1);
     setInputValue("");
 
-    recordHistory(`Enqueued ${value}`, {
+    recordHistory(`Enqueued ${value} at the rear.`, {
       op: "enqueue",
       before,
       after,
@@ -466,10 +527,11 @@ export default function QueueVisualizer() {
       traversal: null,
       line: 6,
     });
-  };
+  }
 
-  const handleDequeue = () => {
+  function handleDequeue() {
     abortReplay();
+
     const before = queueRef.current;
     setOperation("dequeue");
     setTraversal(null);
@@ -477,7 +539,7 @@ export default function QueueVisualizer() {
     if (before.length === 0) {
       setHighlightedId(null);
       setActiveLine(2);
-      setMessage("Cannot dequeue: the queue is empty.");
+      setMessage("Cannot dequeue from an empty queue.");
       return;
     }
 
@@ -488,7 +550,7 @@ export default function QueueVisualizer() {
     setActiveLine(5);
     updateQueue(after);
 
-    recordHistory(`Dequeued ${removedValue}`, {
+    recordHistory(`Dequeued ${removedValue} from the front.`, {
       op: "dequeue",
       before,
       after,
@@ -496,10 +558,11 @@ export default function QueueVisualizer() {
       traversal: null,
       line: 5,
     });
-  };
+  }
 
-  const handlePeek = () => {
+  function handlePeek() {
     abortReplay();
+
     const q = queueRef.current;
     setOperation("peek");
     setTraversal(null);
@@ -517,17 +580,20 @@ export default function QueueVisualizer() {
     setHighlightedId(frontId);
     setActiveLine(4);
 
-    recordHistory(`Peeked front: ${frontValue}`, {
-      op: "peek",
-      before: q,
-      after: q,
-      activeId: frontId,
-      traversal: null,
-      line: 4,
-    });
-  };
+    recordHistory(
+      `Front element: ${frontValue}. The queue remains unchanged.`,
+      {
+        op: "peek",
+        before: q,
+        after: q,
+        activeId: frontId,
+        traversal: null,
+        line: 4,
+      }
+    );
+  }
 
-  const handleSearch = () => {
+  function handleSearch() {
     if (searchValue.trim() === "") {
       setMessage("Enter a value to search for.");
       return;
@@ -541,6 +607,7 @@ export default function QueueVisualizer() {
     }
 
     abortReplay();
+
     const q = queueRef.current;
     setOperation("search");
     setTraversal(null);
@@ -551,10 +618,13 @@ export default function QueueVisualizer() {
 
     const found = foundIndex !== -1;
     const line = found ? 6 : 9;
-    const activeId = found ? getNodeId(q[foundIndex], foundIndex) : null;
+    const activeId = found
+      ? getNodeId(q[foundIndex], foundIndex)
+      : null;
+
     const text = found
-      ? `Found ${target} at position ${foundIndex}`
-      : `${target} was not found`;
+      ? `Found ${target} at position ${foundIndex}.`
+      : `Value ${target} was not found in the queue.`;
 
     setHighlightedId(activeId);
     setActiveLine(line);
@@ -567,10 +637,11 @@ export default function QueueVisualizer() {
       traversal: null,
       line,
     });
-  };
+  }
 
-  const handleTraverse = () => {
+  function handleTraverse() {
     abortReplay();
+
     const q = queueRef.current;
     setOperation("traverse");
     setActiveLine(4);
@@ -581,8 +652,8 @@ export default function QueueVisualizer() {
 
     recordHistory(
       values.length > 0
-        ? `Traversed queue: ${values.join(" → ")}`
-        : "Traversed an empty queue",
+        ? `Traversed ${values.length} element(s), from front to rear.`
+        : "Traversed an empty queue.",
       {
         op: "traverse",
         before: q,
@@ -592,28 +663,29 @@ export default function QueueVisualizer() {
         line: 4,
       }
     );
-  };
+  }
 
-  const handleClear = () => {
+  function handleClear() {
     abortReplay();
+
     const before = queueRef.current;
     const after: ListNode[] = [];
 
     setOperation("clear");
-    setActiveLine(2);
+    setActiveLine(1);
     updateQueue(after);
 
-    recordHistory("Cleared the queue", {
+    recordHistory("Cleared the queue.", {
       op: "clear",
       before,
       after,
       activeId: null,
       traversal: null,
-      line: 2,
+      line: 1,
     });
-  };
+  }
 
-  const handleGenerate = () => {
+  function handleGenerate() {
     const count = Number(randomCount);
     const min = Number(randomMin);
     const max = Number(randomMax);
@@ -627,12 +699,13 @@ export default function QueueVisualizer() {
       min > max
     ) {
       setMessage(
-        "Enter a node count from 1–20 and valid integer minimum and maximum values."
+        "Enter a count from 1–20 and valid integer minimum and maximum values."
       );
       return;
     }
 
     abortReplay();
+
     const before = queueRef.current;
     let generatedQueue: ListNode[] = [];
     let id = nextIdRef.current;
@@ -644,6 +717,7 @@ export default function QueueVisualizer() {
     }
 
     updateQueue(generatedQueue);
+
     nextIdRef.current = id;
     setNextId(id);
     setOperation("traverse");
@@ -652,7 +726,7 @@ export default function QueueVisualizer() {
     const values = generatedQueue.map((node) => getNodeValue(node));
     setTraversal(values);
 
-    recordHistory(`Generated a queue with ${generatedQueue.length} nodes`, {
+    recordHistory(`Generated a queue with ${count} elements.`, {
       op: "traverse",
       before,
       after: generatedQueue,
@@ -660,19 +734,19 @@ export default function QueueVisualizer() {
       traversal: values,
       line: 4,
     });
-  };
+  }
 
-  const handleZoomIn = () => {
+  function handleZoomIn() {
     setZoom((current) =>
       Math.min(MAX_ZOOM, Math.round((current + ZOOM_STEP) * 10) / 10)
     );
-  };
+  }
 
-  const handleZoomOut = () => {
+  function handleZoomOut() {
     setZoom((current) =>
       Math.max(MIN_ZOOM, Math.round((current - ZOOM_STEP) * 10) / 10)
     );
-  };
+  }
 
   return (
     <main className="flex min-h-screen flex-col bg-background text-foreground">
@@ -696,6 +770,7 @@ export default function QueueVisualizer() {
         }
       `}</style>
 
+      {/* HEADER */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
@@ -711,9 +786,11 @@ export default function QueueVisualizer() {
         </Badge>
       </header>
 
-      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:overflow-hidden">
+      {/* MAIN LAYOUT */}
+      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         {/* LEFT SIDEBAR */}
         <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
+          {/* OPERATIONS */}
           <Card>
             <CardHeader className="p-3 pb-2">
               <CardTitle className="text-sm">Operations</CardTitle>
@@ -724,8 +801,11 @@ export default function QueueVisualizer() {
 
             <CardContent className="space-y-2 p-3 pt-1">
               <div className="space-y-1">
-                <label className="text-xs font-medium">Value</label>
+                <label htmlFor="queue-value" className="text-xs font-medium">
+                  Element value
+                </label>
                 <Input
+                  id="queue-value"
                   type="number"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -741,49 +821,35 @@ export default function QueueVisualizer() {
                 onClick={handleEnqueue}
                 className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
-                <span className="mr-2">+</span> Enqueue
+                + Enqueue
               </Button>
 
               <Button
                 onClick={handleDequeue}
                 className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
-                <span className="mr-2">−</span> Dequeue
+                − Dequeue
               </Button>
 
               <Button
                 onClick={handlePeek}
                 className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
-                <span className="mr-2">⌕</span> Peek Front
+                Peek Front
               </Button>
 
-              <div className="space-y-1 border-t pt-2">
-                <label className="text-xs font-medium">Search value</label>
-                <Input
-                  type="number"
-                  value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSearch();
-                  }}
-                  placeholder="Search value"
-                  className="h-8 text-sm"
-                />
-
-                <Button
-                  onClick={handleSearch}
-                  className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
-                >
-                  Search
-                </Button>
-              </div>
+              <Button
+                onClick={handleSearch}
+                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
+              >
+                Search Value
+              </Button>
 
               <Button
                 onClick={handleTraverse}
                 className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
               >
-                FIFO Traversal
+                Traverse Queue
               </Button>
 
               <Button
@@ -795,6 +861,7 @@ export default function QueueVisualizer() {
             </CardContent>
           </Card>
 
+          {/* RANDOM QUEUE */}
           <Card>
             <CardHeader className="p-3 pb-2">
               <CardTitle className="text-sm">Random Queue</CardTitle>
@@ -805,8 +872,11 @@ export default function QueueVisualizer() {
 
             <CardContent className="space-y-2 p-3 pt-1">
               <div className="space-y-1">
-                <label className="text-xs font-medium">Node count</label>
+                <label htmlFor="queue-count" className="text-xs font-medium">
+                  Element count
+                </label>
                 <Input
+                  id="queue-count"
                   type="number"
                   min={1}
                   max={20}
@@ -818,8 +888,11 @@ export default function QueueVisualizer() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Minimum</label>
+                  <label htmlFor="queue-min" className="text-xs font-medium">
+                    Minimum
+                  </label>
                   <Input
+                    id="queue-min"
                     type="number"
                     value={randomMin}
                     onChange={(e) => setRandomMin(e.target.value)}
@@ -828,8 +901,11 @@ export default function QueueVisualizer() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Maximum</label>
+                  <label htmlFor="queue-max" className="text-xs font-medium">
+                    Maximum
+                  </label>
                   <Input
+                    id="queue-max"
                     type="number"
                     value={randomMax}
                     onChange={(e) => setRandomMax(e.target.value)}
@@ -840,13 +916,15 @@ export default function QueueVisualizer() {
 
               <Button
                 onClick={handleGenerate}
-                className="h-8 w-full bg-secondary text-xs text-white hover:bg-secondary/90"
+                variant="outline"
+                className="h-8 w-full text-xs"
               >
                 Generate Queue
               </Button>
             </CardContent>
           </Card>
 
+          {/* HISTORY */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between p-3 pb-2">
               <div>
@@ -855,6 +933,7 @@ export default function QueueVisualizer() {
                   Press Play to replay
                 </CardDescription>
               </div>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -892,6 +971,7 @@ export default function QueueVisualizer() {
             </CardContent>
           </Card>
 
+          {/* STATUS */}
           <Alert className="border-red-100 bg-red-50/60">
             <AlertDescription className="text-xs leading-relaxed text-red-900">
               {message}
@@ -901,14 +981,15 @@ export default function QueueVisualizer() {
 
         {/* RIGHT CONTENT */}
         <section className="flex min-w-0 flex-col gap-3">
+          {/* VISUALIZATION PLAYGROUND */}
           <Card className="min-w-0 overflow-hidden">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
               <div>
                 <CardTitle className="text-base">
-                  Visualization Playground
+                  Learn, Play and Create
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Front-to-rear queue representation
+                  Watch elements move from the front to the rear of the queue.
                 </CardDescription>
               </div>
 
@@ -957,12 +1038,15 @@ export default function QueueVisualizer() {
                   <Button
                     type="button"
                     size="sm"
+                    variant="outline"
                     onClick={handlePlay}
                     disabled={isPlaying}
                     className={`gap-2 ${coralButton}`}
                   >
-                    <Play className="h-4 w-4" /> Play
+                    <Play className="h-4 w-4" />
+                    Play
                   </Button>
+
                   <Button
                     type="button"
                     size="sm"
@@ -971,8 +1055,10 @@ export default function QueueVisualizer() {
                     disabled={!isPlaying}
                     className={`gap-2 ${coralButton}`}
                   >
-                    <Pause className="h-4 w-4" /> Pause
+                    <Pause className="h-4 w-4" />
+                    Pause
                   </Button>
+
                   <Button
                     type="button"
                     size="sm"
@@ -981,8 +1067,10 @@ export default function QueueVisualizer() {
                     disabled={undoStack.length === 0}
                     className={`gap-2 ${coralButton}`}
                   >
-                    <Undo2 className="h-4 w-4" /> Undo
+                    <Undo2 className="h-4 w-4" />
+                    Undo
                   </Button>
+
                   <Button
                     type="button"
                     size="sm"
@@ -991,7 +1079,8 @@ export default function QueueVisualizer() {
                     disabled={redoStack.length === 0}
                     className={`gap-2 ${coralButton}`}
                   >
-                    <Redo2 className="h-4 w-4" /> Redo
+                    <Redo2 className="h-4 w-4" />
+                    Redo
                   </Button>
                 </div>
 
@@ -1045,7 +1134,7 @@ export default function QueueVisualizer() {
               </div>
 
               {/* QUEUE DIAGRAM */}
-              <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border bg-muted/10">
+              <div className="flex min-h-[500px] min-w-0 flex-col overflow-hidden rounded-lg border bg-muted/10">
                 <div className="flex items-center justify-between border-b px-3 py-2">
                   <span className="text-xs font-medium">Queue Structure</span>
                   <Badge variant="outline" className="text-[10px]">
@@ -1053,25 +1142,23 @@ export default function QueueVisualizer() {
                   </Badge>
                 </div>
 
-                <div className="relative min-h-[400px] min-w-0 flex-1 overflow-auto p-6">
+                <div className="relative flex min-h-[450px] min-w-0 flex-1 overflow-auto p-6">
                   {queue.length === 0 ? (
-                    <div className="flex min-h-[350px] items-center justify-center text-center">
-                      <div>
-                        <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
-                          ∅
-                        </div>
-                        <p className="text-sm font-medium">Queue is empty</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Enqueue a value to add the first element.
-                        </p>
+                    <div className="m-auto text-center">
+                      <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
+                        ∅
                       </div>
+                      <p className="text-sm font-medium">Queue is empty</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Enqueue a value to add the first element.
+                      </p>
                     </div>
                   ) : (
                     <div
-                      className="flex min-h-[300px] w-max min-w-full items-center gap-3 py-8 transition-transform"
+                      className="m-auto flex min-w-max items-center gap-3 px-3 py-8 transition-transform"
                       style={{
                         zoom,
-                        minWidth: `${queue.length * 136 + 160}px`,
+                        minHeight: "300px",
                       }}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -1093,7 +1180,7 @@ export default function QueueVisualizer() {
                         return (
                           <div
                             key={nodeId}
-                            className="flex w-max items-center gap-3"
+                            className="flex shrink-0 items-center gap-3"
                           >
                             <div className="flex flex-col items-center gap-2">
                               <div
@@ -1108,44 +1195,49 @@ export default function QueueVisualizer() {
                                       }
                                     : undefined
                                 }
-                                className={`anim-new relative flex h-16 min-w-16 items-center justify-center rounded-xl border-2 px-3 text-lg font-bold shadow-sm transition-colors ${
+                                className={`anim-new relative flex h-14 min-w-36 shrink-0 items-center justify-between gap-5 border-2 px-4 transition-colors ${
                                   isHighlighted
-                                    ? "border-red-600 bg-red-100 text-red-800 ring-2 ring-red-300"
+                                    ? "z-10 border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
                                     : isFront
-                                      ? "border-red-400 bg-red-50 text-red-700"
+                                      ? "border-red-400 bg-red-50 text-red-800"
                                       : "border-border bg-card text-foreground"
                                 }`}
                               >
-                                {value}
+                                <span className="text-[10px] text-muted-foreground">
+                                  #{index}
+                                </span>
+
+                                <span className="text-lg font-bold">
+                                  {value}
+                                </span>
+
                                 {isNew && (
                                   <span
-                                    className="absolute -right-2 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                    className="absolute -left-2 -top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
                                     style={{
-                                      animation:
-                                        "badge-pop 400ms ease-out both",
+                                      animation: "badge-pop 400ms ease-out both",
                                     }}
                                   >
                                     NEW
                                   </span>
                                 )}
+
+                                {isHighlighted && (
+                                  <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                                    ACTIVE
+                                  </span>
+                                )}
                               </div>
 
-                              <span className="text-[10px] text-muted-foreground">
-                                Index {index}
-                              </span>
-
                               {isFront && (
-                                <Badge
-                                  variant="outline"
-                                  className="border-red-300 text-[10px] text-red-700"
-                                >
-                                  Front
+                                <Badge className="bg-red-600 text-white hover:bg-red-600">
+                                  FRONT
                                 </Badge>
                               )}
 
                               {isRear && (
                                 <Badge variant="outline" className="text-[10px]">
-                                  Rear
+                                  REAR
                                 </Badge>
                               )}
                             </div>
@@ -1176,7 +1268,9 @@ export default function QueueVisualizer() {
               {/* QUEUE REPRESENTATION */}
               <div className="rounded-lg border p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold">Queue Representation</p>
+                  <p className="text-xs font-semibold">
+                    Queue Representation
+                  </p>
                   <span className="text-[10px] text-muted-foreground">
                     Front → Rear
                   </span>
@@ -1188,6 +1282,7 @@ export default function QueueVisualizer() {
                   ) : (
                     queue.map((node, index) => {
                       const nodeId = getNodeId(node, index);
+
                       return (
                         <div
                           key={`${nodeId}-array`}
@@ -1220,11 +1315,7 @@ export default function QueueVisualizer() {
                     Traversal / Operation Output
                   </span>
                   <Badge variant="outline" className="text-[10px]">
-                    {complexity.find(
-                      (item) =>
-                        item.operation.toLowerCase() ===
-                        (operation === "traverse" ? "traversal" : operation)
-                    )?.time ?? "O(n)"}
+                    {selectedCode.complexity}
                   </Badge>
                 </div>
 
@@ -1239,6 +1330,7 @@ export default function QueueVisualizer() {
                           <span className="rounded-md bg-red-100 px-2 py-1 font-mono text-xs font-medium text-red-800">
                             {value}
                           </span>
+
                           {index < traversal.length - 1 && (
                             <span className="text-xs text-muted-foreground">
                               →
@@ -1261,6 +1353,7 @@ export default function QueueVisualizer() {
 
           {/* BOTTOM ROW: PSEUDOCODE + COMPLEXITY */}
           <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
+            {/* PSEUDOCODE */}
             <Card className="flex min-w-0 flex-col overflow-hidden">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1269,25 +1362,27 @@ export default function QueueVisualizer() {
                     {selectedCode.title}
                   </Badge>
                 </div>
+
                 <CardDescription className="text-xs">
-                  Follow the current operation step by step.
+                  Follow the selected operation step by step.
                 </CardDescription>
               </CardHeader>
 
               <CardContent className="flex flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
-                <div className="max-h-[300px] overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
+                <div className="max-h-[260px] overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
                   {selectedCode.lines.map((line, index) => (
                     <div
                       key={`${operation}-${index}`}
                       className={`flex min-w-max gap-3 rounded px-2 py-1 ${
                         activeLine === index
-                          ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
+                          ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
                           : ""
                       }`}
                     >
                       <span className="w-5 shrink-0 select-none text-right text-slate-500">
                         {index + 1}
                       </span>
+
                       <span
                         className={
                           line.trim().startsWith("//")
@@ -1302,7 +1397,7 @@ export default function QueueVisualizer() {
                 </div>
 
                 <div className="rounded-lg border bg-muted/20 p-3">
-                  <p className="mb-1 text-xs font-semibold">Explanation</p>
+                  <p className="mb-2 text-xs font-semibold">How it works</p>
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     {selectedCode.explanation}
                   </p>
@@ -1310,6 +1405,7 @@ export default function QueueVisualizer() {
               </CardContent>
             </Card>
 
+            {/* TIME COMPLEXITY */}
             <Card className="flex min-w-0 flex-col overflow-hidden md:max-h-[560px]">
               <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
                 <CardTitle className="text-sm">Time Complexity</CardTitle>
@@ -1320,12 +1416,8 @@ export default function QueueVisualizer() {
 
               <CardContent className="flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
                 <div className="space-y-2">
-                  {complexity.map((item) => {
-                    const normalizedOperation =
-                      operation === "traverse" ? "traversal" : operation;
-
-                    const isActive =
-                      item.operation.toLowerCase() === normalizedOperation;
+                  {complexityRows.map((item) => {
+                    const isActive = item.key === operation;
 
                     return (
                       <div
@@ -1338,6 +1430,7 @@ export default function QueueVisualizer() {
                           <p className="text-xs font-semibold">
                             {item.operation}
                           </p>
+
                           <Badge
                             variant="outline"
                             className={`font-mono text-[10px] ${
@@ -1359,8 +1452,8 @@ export default function QueueVisualizer() {
                 <div className="mt-3 rounded-lg border bg-muted/20 p-3">
                   <p className="text-xs font-semibold">Space Complexity</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    A queue storing n elements requires O(n) space. Enqueue and
-                    dequeue take O(1) time per operation.
+                    A queue containing n elements requires O(n) space.
+                    Enqueue and dequeue take O(1) time per operation.
                   </p>
                 </div>
               </CardContent>

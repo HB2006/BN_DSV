@@ -11,7 +11,7 @@ import {
   Plus,
   Trash2,
   Search,
-  GitBranch,
+  ArrowLeft,
   ArrowRight,
   Gauge,
 } from "lucide-react";
@@ -38,10 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Alert,
-  AlertDescription,
-} from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type GraphSnapshot = {
   graph: GraphData;
@@ -54,9 +51,32 @@ type GraphSnapshot = {
 type CodeInfo = {
   title: string;
   description: string;
+  steps: string[];
   code: string[];
   complexity: string;
 };
+
+/* ---------- SHARED STYLE TOKENS (match the Stack / Queue pages) ---------- */
+
+// Card: soft teal border, rounded-2xl
+const cardCls = "rounded-2xl border-[#BFD8D8] bg-card shadow-none";
+
+// Inner boxes (stats, how-it-works, traversal, etc.)
+const innerBox = "rounded-xl border border-[#BFD8D8]";
+
+// Operation buttons: teal fill, tan/orange border, bold white text
+const opButton =
+  "h-8 w-full rounded-lg border border-[#E0A96D] bg-secondary text-xs font-semibold text-white hover:bg-secondary/90";
+
+// Playback buttons: coral fill, teal border (disabled state fades via opacity)
+const coralButton =
+  "gap-2 rounded-lg border border-[#0F6B6D] bg-[#F08080] font-semibold text-white hover:bg-[#E56B6B] hover:text-white disabled:opacity-50 dark:bg-[#F08080] dark:hover:bg-[#E56B6B]";
+
+// Zoom buttons: outlined teal, cream background
+const zoomButton =
+  "h-8 rounded-lg border border-[#0F6B6D] bg-background px-0 text-[#0F6B6D] hover:bg-background/80";
+
+const inputCls = "h-9 rounded-lg border-[#BFD8D8] bg-background text-sm";
 
 const INITIAL_GRAPH: GraphData = {
   nodes: [
@@ -81,6 +101,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   "add-vertex": {
     title: "Add Vertex",
     description: "Add a new vertex to the graph.",
+    steps: [
+      "Check whether the vertex already exists.",
+      "Create a new vertex with the given value.",
+      "Add it to the graph's vertex list.",
+      "The graph now contains the new vertex.",
+    ],
     code: [
       "function addVertex(graph, value):",
       "    if vertex already exists:",
@@ -94,6 +120,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   "remove-vertex": {
     title: "Remove Vertex",
     description: "Remove a vertex and all its connected edges.",
+    steps: [
+      "Find the vertex to remove.",
+      "Remove the vertex from the graph.",
+      "Remove every edge connected to it.",
+      "Return the updated graph.",
+    ],
     code: [
       "function removeVertex(graph, value):",
       "    find the vertex",
@@ -106,6 +138,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   "add-edge": {
     title: "Add Edge",
     description: "Connect two existing vertices.",
+    steps: [
+      "Find the source vertex.",
+      "Find the target vertex.",
+      "Create an edge between them.",
+      "Add the edge to the graph.",
+    ],
     code: [
       "function addEdge(graph, source, target):",
       "    find source vertex",
@@ -119,6 +157,11 @@ const CODE_INFO: Record<string, CodeInfo> = {
   "remove-edge": {
     title: "Remove Edge",
     description: "Remove the connection between two vertices.",
+    steps: [
+      "Find the edge connecting the two vertices.",
+      "Remove it from the edge list.",
+      "Both vertices stay in the graph.",
+    ],
     code: [
       "function removeEdge(graph, source, target):",
       "    find the connecting edge",
@@ -130,6 +173,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   search: {
     title: "Search Vertex",
     description: "Find a vertex with the given value.",
+    steps: [
+      "Visit each vertex in the graph.",
+      "Compare its value with the target.",
+      "Return the vertex when a match is found.",
+      "Report not found if no vertex matches.",
+    ],
     code: [
       "function searchVertex(graph, value):",
       "    for each vertex in graph:",
@@ -142,6 +191,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   bfs: {
     title: "Breadth-First Search",
     description: "Explore vertices level by level using a queue.",
+    steps: [
+      "Mark the starting vertex as visited and enqueue it.",
+      "Dequeue the front vertex and visit it.",
+      "Mark and enqueue each unvisited neighbor.",
+      "Repeat until the queue is empty.",
+    ],
     code: [
       "function BFS(start):",
       "    create an empty queue",
@@ -159,6 +214,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   dfs: {
     title: "Depth-First Search",
     description: "Explore as far as possible before backtracking.",
+    steps: [
+      "Mark the current vertex as visited and visit it.",
+      "Pick an unvisited neighbor.",
+      "Recursively explore it as deep as possible.",
+      "Backtrack when no unvisited neighbors remain.",
+    ],
     code: [
       "function DFS(vertex):",
       "    mark vertex as visited",
@@ -171,6 +232,12 @@ const CODE_INFO: Record<string, CodeInfo> = {
   clear: {
     title: "Clear Graph",
     description: "Remove all vertices and edges.",
+    steps: [
+      "Create an empty graph.",
+      "All vertices are removed.",
+      "All edges are removed.",
+      "Return the empty graph.",
+    ],
     code: [
       "function clearGraph():",
       "    create an empty graph",
@@ -194,9 +261,6 @@ const complexityRows = [
 ];
 
 const MAX_HISTORY = 50;
-
-const primaryButton =
-  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]";
 
 const cloneGraph = (graph: GraphData): GraphData => ({
   nodes: graph.nodes.map((node) => ({ ...node })),
@@ -255,6 +319,7 @@ export default function GraphVisualizer() {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+
     setIsPlaying(false);
   }, []);
 
@@ -277,16 +342,19 @@ export default function GraphVisualizer() {
   }, [activeLine, activeNode, message]);
 
   const saveUndo = useCallback(() => {
-    setUndoStack((previous) => [
-      ...previous,
-      {
-        graph: cloneGraph(graphRef.current),
-        activeNode,
-        activeLine,
-        traversal: [...traversalRef.current],
-        message,
-      },
-    ]);
+    setUndoStack((previous) =>
+      [
+        ...previous,
+        {
+          graph: cloneGraph(graphRef.current),
+          activeNode,
+          activeLine,
+          traversal: [...traversalRef.current],
+          message,
+        },
+      ].slice(-MAX_HISTORY)
+    );
+
     setRedoStack([]);
   }, [activeLine, activeNode, message]);
 
@@ -298,8 +366,11 @@ export default function GraphVisualizer() {
 
     setActiveNode(snapshot.activeNode);
     setActiveLine(snapshot.activeLine);
-    setTraversal([...snapshot.traversal]);
-    traversalRef.current = [...snapshot.traversal];
+
+    const restoredTraversal = [...snapshot.traversal];
+    setTraversal(restoredTraversal);
+    traversalRef.current = restoredTraversal;
+
     setMessage(snapshot.message);
   }, []);
 
@@ -345,10 +416,12 @@ export default function GraphVisualizer() {
 
   const resetTraversal = () => {
     stopPlayback();
+
     setActiveLine(-1);
     setActiveNode(null);
     setTraversal([]);
     traversalRef.current = [];
+
     setPlaybackIndex(-1);
     playbackIndexRef.current = -1;
   };
@@ -594,6 +667,7 @@ export default function GraphVisualizer() {
     setActiveLine(0);
     setTraversal([]);
     traversalRef.current = [];
+
     setPlaybackIndex(-1);
     playbackIndexRef.current = -1;
 
@@ -617,7 +691,9 @@ export default function GraphVisualizer() {
 
     setActiveNode(validResult[0]);
     setActiveLine(type === "bfs" ? 4 : 2);
-    setMessage(`${type.toUpperCase()} traversal started from vertex ${startValue}.`);
+    setMessage(
+      `${type.toUpperCase()} traversal started from vertex ${startValue}.`
+    );
 
     recordHistory(`${type.toUpperCase()} traversal from ${startValue}`);
   };
@@ -736,64 +812,69 @@ export default function GraphVisualizer() {
   };
 
   const handlePlay = () => {
-  const steps = traversalRef.current;
+    const steps = traversalRef.current;
 
-  if (steps.length === 0) {
-    setMessage("Run BFS or DFS first to create traversal steps.");
-    return;
-  }
-
-  // Avoid starting multiple playback intervals.
-  if (timerRef.current !== null) return;
-
-  let current = playbackIndexRef.current;
-
-  // Restart only when playback has already reached the end.
-  if (current >= steps.length - 1) {
-    current = 0;
-    playbackIndexRef.current = 0;
-    setPlaybackIndex(0);
-    setActiveNode(steps[0]);
-  }
-
-  setIsPlaying(true);
-
-  timerRef.current = setInterval(() => {
-    const currentSteps = traversalRef.current;
-    const currentIndex = playbackIndexRef.current;
-
-    if (currentSteps.length === 0 || currentIndex >= currentSteps.length - 1) {
-      if (timerRef.current !== null) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-
-      setIsPlaying(false);
-      setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
+    if (steps.length === 0) {
+      setMessage("Run BFS or DFS first to create traversal steps.");
       return;
     }
 
-    const next = currentIndex + 1;
+    if (timerRef.current !== null) return;
 
-    playbackIndexRef.current = next;
-    setPlaybackIndex(next);
-    setActiveNode(currentSteps[next]);
-    setActiveLine(operation === "bfs" ? 4 : 2);
-    setMessage(
-      `Visiting vertex ${currentSteps[next]} (${next + 1}/${currentSteps.length}).`
-    );
+    let current = playbackIndexRef.current;
 
-    if (next >= currentSteps.length - 1) {
-      if (timerRef.current !== null) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+    if (current >= steps.length - 1) {
+      current = 0;
+      playbackIndexRef.current = 0;
+      setPlaybackIndex(0);
+      setActiveNode(steps[0]);
+    }
+
+    setIsPlaying(true);
+
+    timerRef.current = setInterval(() => {
+      const currentSteps = traversalRef.current;
+      const currentIndex = playbackIndexRef.current;
+
+      if (
+        currentSteps.length === 0 ||
+        currentIndex >= currentSteps.length - 1
+      ) {
+        if (timerRef.current !== null) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+
+        setIsPlaying(false);
+
+        if (currentSteps.length > 0) {
+          setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
+        }
+
+        return;
       }
 
-      setIsPlaying(false);
-      setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
-    }
-  }, Number(animationSpeed));
-};
+      const next = currentIndex + 1;
+
+      playbackIndexRef.current = next;
+      setPlaybackIndex(next);
+      setActiveNode(currentSteps[next]);
+      setActiveLine(operation === "bfs" ? 4 : 2);
+      setMessage(
+        `Visiting vertex ${currentSteps[next]} (${next + 1}/${currentSteps.length}).`
+      );
+
+      if (next >= currentSteps.length - 1) {
+        if (timerRef.current !== null) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+
+        setIsPlaying(false);
+        setMessage(`Traversal complete: ${currentSteps.join(" → ")}.`);
+      }
+    }, Number(animationSpeed));
+  };
 
   const handleRestartPlayback = () => {
     stopPlayback();
@@ -808,6 +889,17 @@ export default function GraphVisualizer() {
     setActiveNode(traversalRef.current[0]);
     setActiveLine(operation === "bfs" ? 4 : 2);
     setMessage("Traversal restarted.");
+  };
+
+  const handleSpeedChange = (speed: string) => {
+    const wasPlaying = timerRef.current !== null;
+
+    stopPlayback();
+    setAnimationSpeed(speed);
+
+    if (wasPlaying) {
+      setMessage("Speed updated. Press Play to resume.");
+    }
   };
 
   const handleZoomIn = () => {
@@ -846,806 +938,807 @@ export default function GraphVisualizer() {
 
   return (
     <main className="flex min-h-screen flex-col bg-background text-foreground">
-      {/* HEADER */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#0F6B6D]">
-            Graph Visualizer
-          </h1>
-          <p className="text-sm text-[#0F6B6D]">
-            Build graphs and explore BFS and DFS step by step.
-          </p>
-        </div>
+      <style>{`
+        /* Dark, always-visible scrollbars (sidebar + complexity list) */
+        .vis-scroll { scrollbar-width: thin; scrollbar-color: #3f4a4f transparent; }
+        .vis-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+        .vis-scroll::-webkit-scrollbar-track { background: transparent; }
+        .vis-scroll::-webkit-scrollbar-thumb {
+          background: #3f4a4f;
+          border-radius: 999px;
+          border: 3px solid transparent;
+          background-clip: content-box;
+        }
+      `}</style>
 
-        <Badge className="border-red-200 bg-red-50 text-red-700 hover:bg-red-50">
-          Graph · BFS / DFS
-        </Badge>
-      </header>
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        {/* HEADER */}
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b py-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D]">
+              Graph Visualizer
+            </h1>
+            <p className="text-xs text-[#0F6B6D]">
+              Build graphs and explore BFS and DFS step by step.
+            </p>
+          </div>
 
-      {/* MAIN LAYOUT */}
-      <div className="grid grid-cols-1 items-start gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        {/* LEFT SIDEBAR */}
-        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1">
-          {/* OPERATIONS */}
-<Card>
-  <CardHeader className="p-3 pb-2">
-    <CardTitle className="text-sm">Operations</CardTitle>
-    <CardDescription className="text-xs">
-      Modify your graph
-    </CardDescription>
-  </CardHeader>
+          <Badge
+            variant="outline"
+            className="rounded-full border-pink-300 bg-pink-50 text-pink-700 hover:bg-pink-50"
+          >
+            Graph · BFS / DFS
+          </Badge>
+        </header>
 
-  <CardContent className="space-y-2 p-3 pt-1">
-    <div className="space-y-1">
-      <label htmlFor="graph-value" className="text-xs font-medium">
-        Vertex value
-      </label>
-      <Input
-        id="graph-value"
-        type="number"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") handleAddVertex();
-        }}
-        placeholder="Enter value"
-        className="h-8 text-sm"
-      />
-    </div>
-
-    <Button
-      onClick={() => {
-        if (isPlaying) {
-          stopPlayback();
-          } else {
-              handlePlay( );
-          }
-        }}
-      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-    >
-      <Plus className="mr-1 h-3.5 w-3.5" />
-      Add Vertex
-    </Button>
-
-    <Button
-      onClick={handleRemoveVertex}
-      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-    >
-      <Trash2 className="mr-1 h-3.5 w-3.5" />
-      Remove Vertex
-    </Button>
-
-    <Button
-      onClick={handleSearch}
-      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-    >
-      <Search className="mr-1 h-3.5 w-3.5" />
-      Search Vertex
-    </Button>
-
-    <div className="space-y-2 border-t pt-3">
-      <p className="text-xs font-semibold">Edge Operations</p>
-
-      <Input
-        type="number"
-        value={source}
-        onChange={(event) => {
-        const wasPlaying = isPlaying;
-          stopPlayback();
-          setAnimationSpeed(event.target.value);
-
-          if (wasPlaying) {
-            setMessage("Speed updated. Press Play to resume.");
-          }
-        }}
-        placeholder="Source vertex"
-        className="h-8 text-sm"
-      />
-
-      <Input
-        type="number"
-        value={target}
-        onChange={(event) => setTarget(event.target.value)}
-        placeholder="Target vertex"
-        className="h-8 text-sm"
-      />
-
-      <Button
-        onClick={handleAddEdge}
-        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-      >
-        <Plus className="mr-1 h-3.5 w-3.5" />
-        Add Edge
-      </Button>
-
-      <Button
-        onClick={handleRemoveEdge}
-        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-      >
-        <Trash2 className="mr-1 h-3.5 w-3.5" />
-        Remove Edge
-      </Button>
-
-      <label className="flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={directed}
-          onChange={(event) => setDirected(event.target.checked)}
-          className="h-3.5 w-3.5"
-        />
-        Directed graph
-      </label>
-
-      <p className="text-[10px] leading-relaxed text-muted-foreground">
-        Direction changes the displayed arrows. Traversal follows
-        the behavior implemented in graph-operation.
-      </p>
-    </div>
-
-    <div className="space-y-2 border-t pt-3">
-      <p className="text-xs font-semibold">Graph Traversal</p>
-      <p className="text-[10px] text-muted-foreground">
-        Enter the starting vertex above.
-      </p>
-
-      <Button
-        onClick={() => startTraversal("bfs")}
-        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-      >
-        Run BFS
-      </Button>
-
-      <Button
-        onClick={() => startTraversal("dfs")}
-        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-      >
-        Run DFS
-      </Button>
-    </div>
-
-    <div className="space-y-2 border-t pt-3">
-      <p className="text-xs font-semibold">Random Graph</p>
-
-      <Input
-        type="number"
-        min={2}
-        max={12}
-        value={randomCount}
-        onChange={(event) => setRandomCount(event.target.value)}
-        className="h-8 text-sm"
-        placeholder="Vertices (2–12)"
-      />
-
-      <Button
-        onClick={handleRandomGraph}
-        className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-      >
-        <Shuffle className="mr-1 h-3.5 w-3.5" />
-        Generate Graph
-      </Button>
-    </div>
-
-    <Button
-      onClick={handleClear}
-      className="h-8 w-full text-xs bg-[#0F6B6D] text-white hover:bg-[#0B5557]"
-    >
-      <Trash2 className="mr-1 h-3.5 w-3.5" />
-      Clear Graph
-    </Button>
-  </CardContent>
-</Card>
-
-          {/* UNDO / REDO */}
-          <Card>
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-sm">Undo / Redo</CardTitle>
-              <CardDescription className="text-xs">
-                Restore a previous graph state
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="grid grid-cols-2 gap-2 p-3 pt-1">
-              <Button
-                variant="outline"
-                onClick={handleUndo}
-                disabled={undoStack.length === 0}
-                className="h-8 text-xs"
-              >
-                <Undo2 className="mr-1 h-3.5 w-3.5" />
-                Undo
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={handleRedo}
-                disabled={redoStack.length === 0}
-                className="h-8 text-xs"
-              >
-                <Redo2 className="mr-1 h-3.5 w-3.5" />
-                Redo
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* HISTORY */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between p-3 pb-2">
-              <div>
-                <CardTitle className="text-sm">History</CardTitle>
-                <CardDescription className="text-xs">
-                  Recent graph operations
-                </CardDescription>
-              </div>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setHistory([])}
-                className="h-6 px-2 text-xs text-muted-foreground"
-              >
-                Clear
-              </Button>
-            </CardHeader>
-
-            <CardContent className="p-3 pt-1">
-              {history.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Operations will appear here.
-                </p>
-              ) : (
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {history.map((item, index) => (
-                    <div
-                      key={`${item}-${index}`}
-                      className="border-l-2 border-red-200 pl-2 text-xs text-muted-foreground"
-                    >
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* STATUS */}
-          <Alert className="border-red-100 bg-red-50/60">
-            <AlertDescription className="text-xs leading-relaxed text-red-900">
-              {message}
-            </AlertDescription>
-          </Alert>
-        </aside>
-
-        {/* RIGHT CONTENT */}
-        <section className="flex min-w-0 flex-col gap-3">
-          {/* VISUALIZATION PLAYGROUND */}
-          <Card className="min-w-0 overflow-hidden">
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b p-3 sm:p-4">
-              <div>
-                <CardTitle className="text-base">
-                  Visualization Playground
+        {/* MAIN LAYOUT */}
+        <div className="grid grid-cols-1 items-start gap-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          {/* LEFT SIDEBAR */}
+          <aside className="vis-scroll min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-scroll lg:pr-1">
+            {/* OPERATIONS */}
+            <Card className={cardCls}>
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Operations
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Watch vertices and edges change as you perform operations.
+                  Modify your graph
                 </CardDescription>
-              </div>
+              </CardHeader>
 
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleZoomOut}
-                  disabled={zoom <= 0.5}
-                  className="h-8 w-8 px-0"
-                  aria-label="Zoom out"
-                >
-                  −
+              <CardContent className="space-y-2 p-4 pt-1">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="graph-value"
+                    className="text-xs font-medium"
+                  >
+                    Vertex value
+                  </label>
+
+                  <Input
+                    id="graph-value"
+                    type="number"
+                    value={value}
+                    onChange={(event) => setValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleAddVertex();
+                    }}
+                    placeholder="Enter value"
+                    className={inputCls}
+                  />
+                </div>
+
+                <Button onClick={handleAddVertex} className={opButton}>
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  Add Vertex
                 </Button>
 
-                <span className="min-w-12 text-center text-xs text-muted-foreground">
-                  {Math.round(zoom * 100)}%
-                </span>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleZoomIn}
-                  disabled={zoom >= 1.8}
-                  className="h-8 w-8 px-0"
-                  aria-label="Zoom in"
-                >
-                  +
+                <Button onClick={handleRemoveVertex} className={opButton}>
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Remove Vertex
                 </Button>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setZoom(1)}
-                  className="h-8 px-2 text-xs"
-                >
-                  Reset
+                <Button onClick={handleSearch} className={opButton}>
+                  <Search className="mr-1 h-3.5 w-3.5" />
+                  Search Vertex
                 </Button>
-              </div>
-            </CardHeader>
 
-            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
-              {/* PLAYBACK CONTROLS */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
-                <div className="flex flex-wrap items-center gap-2">
+                {/* Edge operations */}
+                <div className="space-y-2 border-t border-[#BFD8D8] pt-3">
+                  <p className="text-xs font-medium">Edge Operations</p>
+
+                  <Input
+                    type="number"
+                    value={source}
+                    onChange={(event) => setSource(event.target.value)}
+                    placeholder="Source vertex"
+                    aria-label="Source vertex"
+                    className={inputCls}
+                  />
+
+                  <Input
+                    type="number"
+                    value={target}
+                    onChange={(event) => setTarget(event.target.value)}
+                    placeholder="Target vertex"
+                    aria-label="Target vertex"
+                    className={inputCls}
+                  />
+
+                  <Button onClick={handleAddEdge} className={opButton}>
+                    <Plus className="mr-1 h-3.5 w-3.5" />
+                    Add Edge
+                  </Button>
+
+                  <Button onClick={handleRemoveEdge} className={opButton}>
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                    Remove Edge
+                  </Button>
+
+                  <label className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={directed}
+                      onChange={(event) => setDirected(event.target.checked)}
+                      className="h-3.5 w-3.5 accent-[#0F6B6D]"
+                    />
+                    Directed graph
+                  </label>
+
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    The directed toggle changes displayed arrows. BFS and DFS
+                    follow the behavior implemented in graph-operation.
+                  </p>
+                </div>
+
+                {/* Traversal */}
+                <div className="space-y-2 border-t border-[#BFD8D8] pt-3">
+                  <p className="text-xs font-medium">Graph Traversal</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Enter the starting vertex above.
+                  </p>
+
                   <Button
-                    type="button"
-                    size="sm"
-                    onClick={isPlaying ? stopPlayback : handlePlay}
-                    disabled={traversal.length === 0}
-                    className={`h-8 gap-2 text-xs ${primaryButton}`}
+                    onClick={() => startTraversal("bfs")}
+                    className={opButton}
                   >
-                    {isPlaying ? (
-                      <>
-                        <Pause className="h-3.5 w-3.5" />
-                        Pause
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-3.5 w-3.5" />
-                        Play
-                      </>
-                    )}
+                    Run BFS
                   </Button>
 
                   <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={stepBackward}
-                    disabled={traversal.length === 0 || playbackIndex <= 0}
-                    className="h-8 gap-1 text-xs"
+                    onClick={() => startTraversal("dfs")}
+                    className={opButton}
                   >
-                    <Undo2 className="h-3.5 w-3.5" />
-                    Previous
+                    Run DFS
                   </Button>
+                </div>
 
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={stepForward}
-                    disabled={
-                      traversal.length === 0 ||
-                      playbackIndex >= traversal.length - 1
-                    }
-                    className="h-8 gap-1 text-xs"
-                  >
-                    <ArrowRight className="h-3.5 w-3.5" />
-                    Next
-                  </Button>
+                {/* Random graph */}
+                <div className="space-y-2 border-t border-[#BFD8D8] pt-3">
+                  <p className="text-xs font-medium">Random Graph</p>
 
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRestartPlayback}
-                    disabled={traversal.length === 0}
-                    className="h-8 gap-1 text-xs"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Restart
+                  <Input
+                    type="number"
+                    min={2}
+                    max={12}
+                    value={randomCount}
+                    onChange={(event) => setRandomCount(event.target.value)}
+                    className={inputCls}
+                    placeholder="Vertices (2–12)"
+                  />
+
+                  <Button onClick={handleRandomGraph} className={opButton}>
+                    <Shuffle className="mr-1 h-3.5 w-3.5" />
+                    Generate Graph
                   </Button>
+                </div>
+
+                <Button onClick={handleClear} className={opButton}>
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Clear Graph
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* HISTORY */}
+            <Card className={cardCls}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                <div>
+                  <CardTitle className="text-sm font-medium">History</CardTitle>
+                  <CardDescription className="text-xs">
+                    Recent graph operations
+                  </CardDescription>
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setHistory([])}
+                  className="h-6 px-2 text-xs text-muted-foreground"
+                >
+                  Clear
+                </Button>
+              </CardHeader>
+
+              <CardContent className="p-4 pt-1">
+                {history.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Operations will appear here.
+                  </p>
+                ) : (
+                  <div className="vis-scroll max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {history.map((item, index) => (
+                      <div
+                        key={`${item}-${index}`}
+                        className="border-l-2 border-red-200 pl-2 text-xs text-muted-foreground"
+                      >
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* STATUS */}
+            <Alert className="rounded-xl border-red-100 bg-red-50/60">
+              <AlertDescription className="text-xs leading-relaxed text-red-900">
+                {message}
+              </AlertDescription>
+            </Alert>
+          </aside>
+
+          {/* RIGHT CONTENT */}
+          <section className="flex min-w-0 flex-col gap-4">
+            {/* VISUALIZATION */}
+            <Card className={`${cardCls} min-w-0 overflow-hidden`}>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 border-b border-[#BFD8D8] p-4">
+                <div>
+                  <CardTitle className="text-base font-medium">
+                    Learn, Play and Create
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Watch vertices and edges change as you perform operations.
+                  </CardDescription>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-muted-foreground" />
-                  <label
-                    htmlFor="graph-animation-speed"
-                    className="text-xs"
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleZoomOut}
+                    disabled={zoom <= 0.5}
+                    className={`${zoomButton} w-8`}
+                    aria-label="Zoom out"
                   >
-                    Speed
-                  </label>
+                    −
+                  </Button>
 
-                  <select
-                    id="graph-animation-speed"
-                    value={animationSpeed}
-                    onChange={(event) => {
-                      const wasPlaying = isPlaying;
-                      stopPlayback();
-                      setAnimationSpeed(event.target.value);
-
-                      if (wasPlaying) {
-                        // The user can resume using Play.
-                        setMessage("Speed updated. Press Play to resume.");
-                      }
-                    }}
-                    className="h-8 rounded-md border bg-background px-2 text-xs"
-                  >
-                    <option value="2000">0.5×</option>
-                    <option value="1000">1×</option>
-                    <option value="500">2×</option>
-                    <option value="200">4×</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* STATISTICS */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-lg border bg-muted/20 p-2">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
-                    Vertices
-                  </p>
-                  <p className="text-lg font-semibold">
-                    {graph.nodes.length}
-                  </p>
-                </div>
-
-                <div className="rounded-lg border bg-muted/20 p-2">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
-                    Edges
-                  </p>
-                  <p className="text-lg font-semibold">
-                    {graph.edges.length}
-                  </p>
-                </div>
-
-                <div className="rounded-lg border bg-muted/20 p-2">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
-                    Complexity
-                  </p>
-                  <p className="truncate text-lg font-semibold">
-                    {info.complexity}
-                  </p>
-                </div>
-              </div>
-
-              {/* GRAPH STRUCTURE */}
-              <div className="flex flex-col overflow-hidden rounded-lg border bg-muted/10">
-                <div className="flex items-center justify-between border-b px-3 py-2">
-                  <span className="text-xs font-medium">
-                    Graph Structure
+                  <span className="min-w-12 text-center text-xs text-muted-foreground">
+                    {Math.round(zoom * 100)}%
                   </span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {directed ? "DIRECTED" : "UNDIRECTED"}
-                  </Badge>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleZoomIn}
+                    disabled={zoom >= 1.8}
+                    className={`${zoomButton} w-8`}
+                    aria-label="Zoom in"
+                  >
+                    +
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setZoom(1)}
+                    className={`${zoomButton} px-2 text-xs`}
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="flex flex-col gap-3 p-4">
+                {/* PLAYBACK CONTROLS */}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#BFD8D8] bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePlay}
+                      disabled={isPlaying || traversal.length === 0}
+                      className={coralButton}
+                    >
+                      <Play className="h-4 w-4" />
+                      Play
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={stopPlayback}
+                      disabled={!isPlaying}
+                      className={coralButton}
+                    >
+                      <Pause className="h-4 w-4" />
+                      Pause
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={stepBackward}
+                      disabled={traversal.length === 0 || playbackIndex <= 0}
+                      className={coralButton}
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={stepForward}
+                      disabled={
+                        traversal.length === 0 ||
+                        playbackIndex >= traversal.length - 1
+                      }
+                      className={coralButton}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                      Next
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRestartPlayback}
+                      disabled={traversal.length === 0}
+                      className={coralButton}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Restart
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUndo}
+                      disabled={undoStack.length === 0}
+                      className={coralButton}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      Undo
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRedo}
+                      disabled={redoStack.length === 0}
+                      className={coralButton}
+                    >
+                      <Redo2 className="h-4 w-4" />
+                      Redo
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Gauge className="h-4 w-4 text-muted-foreground" />
+
+                    <label htmlFor="graph-animation-speed" className="text-sm">
+                      Speed
+                    </label>
+
+                    <select
+                      id="graph-animation-speed"
+                      value={animationSpeed}
+                      onChange={(event) =>
+                        handleSpeedChange(event.target.value)
+                      }
+                      className="h-9 rounded-lg border border-[#BFD8D8] bg-background px-3 text-sm"
+                    >
+                      <option value="2000">0.5×</option>
+                      <option value="1000">1×</option>
+                      <option value="500">2×</option>
+                      <option value="200">4×</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="flex min-h-[360px] items-center justify-center overflow-auto p-3 sm:p-4">
-                  {graph.nodes.length === 0 ? (
-                    <div className="m-auto py-8 text-center">
-                      <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
-                        ∅
-                      </div>
-                      <p className="text-sm font-medium">Graph is empty</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Add a vertex to begin.
-                      </p>
-                    </div>
-                  ) : (
-                    <div
-                      className="m-auto min-w-0 transition-transform"
-                      style={{ zoom }}
+                {/* STATISTICS */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Vertices
+                    </p>
+                    <p className="text-xl font-medium">{graph.nodes.length}</p>
+                  </div>
+
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Edges
+                    </p>
+                    <p className="text-xl font-medium">{graph.edges.length}</p>
+                  </div>
+
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Complexity
+                    </p>
+                    <p className="truncate text-xl font-medium">
+                      {info.complexity}
+                    </p>
+                  </div>
+                </div>
+
+                {/* GRAPH STRUCTURE */}
+                <div
+                  className={`${innerBox} flex min-w-0 flex-col overflow-hidden bg-card`}
+                >
+                  <div className="flex items-center justify-between border-b border-[#BFD8D8] px-3 py-2">
+                    <span className="text-xs font-medium">Graph Structure</span>
+
+                    <Badge
+                      variant="outline"
+                      className="rounded-full text-[10px]"
                     >
-                      <svg
-                        viewBox="0 0 500 330"
-                        role="img"
-                        aria-label="Graph visualization"
-                        className="h-auto max-h-[560px] w-full min-w-[300px]"
+                      {directed ? "DIRECTED" : "UNDIRECTED"}
+                    </Badge>
+                  </div>
+
+                  <div className="vis-scroll flex min-h-[360px] items-center justify-center overflow-auto p-3 sm:p-4">
+                    {graph.nodes.length === 0 ? (
+                      <div className="m-auto py-8 text-center">
+                        <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
+                          ∅
+                        </div>
+
+                        <p className="text-sm font-medium">Graph is empty</p>
+
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Add a vertex to begin.
+                        </p>
+                      </div>
+                    ) : (
+                      <div
+                        className="m-auto min-w-0 transition-transform"
+                        style={{ zoom }}
                       >
-                        <defs>
-                          <marker
-                            id="graph-arrow"
-                            markerWidth="8"
-                            markerHeight="8"
-                            refX="6"
-                            refY="3"
-                            orient="auto"
-                          >
-                            <path
-                              d="M0,0 L0,6 L6,3 z"
-                              fill="currentColor"
-                            />
-                          </marker>
-                        </defs>
-
-                        {graph.edges.map((edge, index) => {
-                          const sourceNode = getNodeById(edge.source);
-                          const targetNode = getNodeById(edge.target);
-
-                          if (!sourceNode || !targetNode) return null;
-
-                          const highlighted = edgeIsHighlighted(
-                            edge.source,
-                            edge.target
-                          );
-
-                          const dx = targetNode.x - sourceNode.x;
-                          const dy = targetNode.y - sourceNode.y;
-                          const length = Math.sqrt(dx * dx + dy * dy) || 1;
-                          const offsetX = (dx / length) * 23;
-                          const offsetY = (dy / length) * 23;
-
-                          const x1 = sourceNode.x + offsetX;
-                          const y1 = sourceNode.y + offsetY;
-                          const x2 = targetNode.x - offsetX;
-                          const y2 = targetNode.y - offsetY;
-
-                          return (
-                            <g key={`${edge.source}-${edge.target}-${index}`}>
-                              <line
-                                x1={x1}
-                                y1={y1}
-                                x2={x2}
-                                y2={y2}
-                                stroke={
-                                  highlighted ? "#16a34a" : "currentColor"
-                                }
-                                strokeWidth={highlighted ? 3.5 : 1.8}
-                                opacity={highlighted ? 1 : 0.45}
-                                markerEnd={
-                                  directed ? "url(#graph-arrow)" : undefined
-                                }
+                        <svg
+                          viewBox="0 0 500 330"
+                          role="img"
+                          aria-label="Graph visualization"
+                          className="h-auto max-h-[560px] w-full min-w-[300px]"
+                        >
+                          <defs>
+                            <marker
+                              id="graph-arrow"
+                              markerWidth="8"
+                              markerHeight="8"
+                              refX="6"
+                              refY="3"
+                              orient="auto"
+                            >
+                              <path
+                                d="M0,0 L0,6 L6,3 z"
+                                fill="currentColor"
                               />
+                            </marker>
+                          </defs>
 
-                              {edge.weight !== undefined && (
-                                <text
-                                  x={(x1 + x2) / 2}
-                                  y={(y1 + y2) / 2 - 6}
-                                  textAnchor="middle"
-                                  className="fill-muted-foreground text-[11px]"
-                                >
-                                  {edge.weight}
-                                </text>
-                              )}
-                            </g>
-                          );
-                        })}
+                          {graph.edges.map((edge, index) => {
+                            const sourceNode = getNodeById(edge.source);
+                            const targetNode = getNodeById(edge.target);
 
-                        {graph.nodes.map((node) => {
-                          const isActive = activeNode === node.value;
-                          const traversalIndex = traversal.indexOf(node.value);
-                          const isVisited =
-                            traversalIndex !== -1 &&
-                            traversalIndex <= playbackIndex;
+                            if (!sourceNode || !targetNode) return null;
 
-                          return (
-                            <g key={node.id}>
-                              {isActive && (
+                            const highlighted = edgeIsHighlighted(
+                              edge.source,
+                              edge.target
+                            );
+
+                            const dx = targetNode.x - sourceNode.x;
+                            const dy = targetNode.y - sourceNode.y;
+                            const length = Math.sqrt(dx * dx + dy * dy) || 1;
+                            const offsetX = (dx / length) * 23;
+                            const offsetY = (dy / length) * 23;
+
+                            const x1 = sourceNode.x + offsetX;
+                            const y1 = sourceNode.y + offsetY;
+                            const x2 = targetNode.x - offsetX;
+                            const y2 = targetNode.y - offsetY;
+
+                            return (
+                              <g key={`${edge.source}-${edge.target}-${index}`}>
+                                <line
+                                  x1={x1}
+                                  y1={y1}
+                                  x2={x2}
+                                  y2={y2}
+                                  stroke={
+                                    highlighted ? "#dc2626" : "currentColor"
+                                  }
+                                  strokeWidth={highlighted ? 3.5 : 1.8}
+                                  opacity={highlighted ? 1 : 0.45}
+                                  markerEnd={
+                                    directed ? "url(#graph-arrow)" : undefined
+                                  }
+                                />
+
+                                {edge.weight !== undefined && (
+                                  <text
+                                    x={(x1 + x2) / 2}
+                                    y={(y1 + y2) / 2 - 6}
+                                    textAnchor="middle"
+                                    className="fill-muted-foreground text-[11px]"
+                                  >
+                                    {edge.weight}
+                                  </text>
+                                )}
+                              </g>
+                            );
+                          })}
+
+                          {graph.nodes.map((node) => {
+                            const isActive = activeNode === node.value;
+                            const traversalIndex = traversal.indexOf(
+                              node.value
+                            );
+
+                            const isVisited =
+                              traversalIndex !== -1 &&
+                              traversalIndex <= playbackIndex;
+
+                            return (
+                              <g key={node.id}>
+                                {isActive && (
+                                  <circle
+                                    cx={node.x}
+                                    cy={node.y}
+                                    r={29}
+                                    fill="#dc2626"
+                                    opacity={0.2}
+                                  />
+                                )}
+
                                 <circle
                                   cx={node.x}
                                   cy={node.y}
-                                  r={29}
-                                  fill="#16a34a"
-                                  opacity={0.15}
+                                  r={23}
+                                  fill={
+                                    isActive
+                                      ? "#dc2626"
+                                      : isVisited
+                                        ? "#fee2e2"
+                                        : "var(--background)"
+                                  }
+                                  stroke={
+                                    isActive
+                                      ? "#b91c1c"
+                                      : isVisited
+                                        ? "#f87171"
+                                        : "currentColor"
+                                  }
+                                  strokeWidth={isActive ? 3.5 : 1.8}
                                 />
-                              )}
 
-                              <circle
-                                cx={node.x}
-                                cy={node.y}
-                                r={23}
-                                fill={
-                                  isActive
-                                    ? "#16a34a"
-                                    : isVisited
-                                      ? "#86efac"
-                                      : "var(--background)"
-                                }
-                                stroke={
-                                  isActive
-                                    ? "#15803d"
-                                    : isVisited
-                                      ? "#16a34a"
-                                      : "currentColor"
-                                }
-                                strokeWidth={isActive ? 3.5 : 1.8}
-                              />
+                                <text
+                                  x={node.x}
+                                  y={node.y + 5}
+                                  textAnchor="middle"
+                                  fontSize="14"
+                                  fontWeight="600"
+                                  fill={
+                                    isActive
+                                      ? "#ffffff"
+                                      : isVisited
+                                        ? "#7f1d1d"
+                                        : "currentColor"
+                                  }
+                                >
+                                  {node.value}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                              <text
-                                x={node.x}
-                                y={node.y + 5}
-                                textAnchor="middle"
-                                fontSize="14"
-                                fontWeight="600"
-                                fill={
-                                  isActive
-                                    ? "#ffffff"
-                                    : isVisited
-                                      ? "#14532d"
-                                      : "currentColor"
-                                }
-                              >
-                                {node.value}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </svg>
-                    </div>
+                {/* TRAVERSAL OUTPUT */}
+                <div className={`${innerBox} bg-card p-3`}>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold">
+                      Traversal / Operation Output
+                    </span>
+
+                    <Badge
+                      variant="outline"
+                      className="rounded-full font-mono text-[10px]"
+                    >
+                      {operation === "bfs"
+                        ? "BFS"
+                        : operation === "dfs"
+                          ? "DFS"
+                          : info.complexity}
+                    </Badge>
+                  </div>
+
+                  {traversal.length > 0 ? (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {traversal.map((nodeValue, index) => (
+                          <span
+                            key={`${nodeValue}-${index}`}
+                            className="flex items-center gap-2"
+                          >
+                            <span
+                              className={`rounded-md px-2 py-1 font-mono text-xs font-medium ${
+                                index === playbackIndex
+                                  ? "bg-red-600 text-white"
+                                  : index < playbackIndex
+                                    ? "bg-red-100 text-red-800"
+                                    : "border border-[#BFD8D8] bg-background"
+                              }`}
+                            >
+                              {nodeValue}
+                            </span>
+
+                            {index < traversal.length - 1 && (
+                              <span className="text-xs text-muted-foreground">
+                                →
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-red-600 transition-all duration-300"
+                          style={{
+                            width: `${
+                              ((playbackIndex + 1) / traversal.length) * 100
+                            }%`,
+                          }}
+                        />
+                      </div>
+
+                      <p className="mt-2 text-[10px] text-muted-foreground">
+                        Step {Math.max(playbackIndex + 1, 1)} of{" "}
+                        {traversal.length}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {message}
+                    </p>
                   )}
                 </div>
-              </div>
-
-              {/* TRAVERSAL OUTPUT */}
-              <div className="rounded-lg border bg-muted/10 p-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold">
-                    Traversal Output
-                  </span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {operation === "bfs"
-                      ? "BFS"
-                      : operation === "dfs"
-                        ? "DFS"
-                        : "Graph"}
-                  </Badge>
-                </div>
-
-                {traversal.length > 0 ? (
-                  <>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {traversal.map((nodeValue, index) => (
-                        <span
-                          key={`${nodeValue}-${index}`}
-                          className="flex items-center gap-2"
-                        >
-                          <span
-                            className={`rounded-md px-2 py-1 font-mono text-xs font-medium ${
-                              index === playbackIndex
-                                ? "bg-red-600 text-white"
-                                : index < playbackIndex
-                                  ? "bg-red-100 text-red-800"
-                                  : "border bg-background"
-                            }`}
-                          >
-                            {nodeValue}
-                          </span>
-
-                          {index < traversal.length - 1 && (
-                            <span className="text-xs text-muted-foreground">
-                              →
-                            </span>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-[#D8A7B1] transition-all duration-300"
-                        style={{
-                          width: `${
-                            ((playbackIndex + 1) / traversal.length) * 100
-                          }%`,
-                        }}
-                      />
-                    </div>
-
-                    <p className="mt-2 text-[10px] text-muted-foreground">
-                      Step {Math.max(playbackIndex + 1, 1)} of{" "}
-                      {traversal.length}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Run BFS or DFS to display the traversal sequence.
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* PSEUDOCODE + TIME COMPLEXITY */}
-          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
-            {/* PSEUDOCODE */}
-            <Card className="flex min-w-0 flex-col overflow-hidden">
-              <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle className="text-sm">Pseudocode</CardTitle>
-                  <Badge variant="outline" className="text-xs">
-                    {info.title}
-                  </Badge>
-                </div>
-
-                <CardDescription className="text-xs">
-                  Follow the selected operation step by step.
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="flex flex-col gap-3 p-3 pt-1 sm:p-4 sm:pt-1">
-                <div className="max-h-[260px] overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-xs text-slate-100">
-                  {info.code.map((line, index) => (
-                    <div
-                      key={`${operation}-${index}`}
-                      className={`flex min-w-max gap-3 rounded px-2 py-1 ${
-                        activeLine === index
-                          ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
-                          : ""
-                      }`}
-                    >
-                      <span className="w-5 shrink-0 select-none text-right text-slate-500">
-                        {index + 1}
-                      </span>
-
-                      <span
-                        className={
-                          line.trim().startsWith("//")
-                            ? "text-slate-500 italic"
-                            : ""
-                        }
-                      >
-                        {line}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="rounded-lg border bg-muted/20 p-3">
-                  <p className="mb-2 text-xs font-semibold">
-                    How it works
-                  </p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {info.description}
-                  </p>
-                </div>
               </CardContent>
             </Card>
 
-            {/* TIME COMPLEXITY */}
-            <Card className="flex min-w-0 flex-col overflow-hidden md:max-h-[560px]">
-              <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2">
-                <CardTitle className="text-sm">Time Complexity</CardTitle>
-                <CardDescription className="text-xs">
-                  Performance of graph operations and algorithms.
-                </CardDescription>
-              </CardHeader>
+            {/* PSEUDOCODE + TIME COMPLEXITY */}
+            <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2">
+              {/* PSEUDOCODE */}
+              <Card
+                className={`${cardCls} flex min-w-0 flex-col overflow-hidden`}
+              >
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-sm font-medium">
+                      Pseudocode
+                    </CardTitle>
 
-              <CardContent className="flex-1 overflow-auto p-3 pt-1 sm:p-4 sm:pt-1">
-                <div className="space-y-2">
-                  {complexityRows.map((item) => {
-                    const isActive = item.key === operation;
+                    <Badge
+                      variant="outline"
+                      className="max-w-[65%] truncate rounded-full border-[#BFD8D8] text-xs"
+                    >
+                      {info.title}
+                    </Badge>
+                  </div>
 
-                    return (
+                  <CardDescription className="text-xs">
+                    Follow the selected operation step by step.
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="flex flex-col gap-3 p-4 pt-1">
+                  <div className="vis-scroll max-h-[260px] overflow-auto rounded-xl bg-[#020617] p-4 font-mono text-xs text-slate-100">
+                    {info.code.map((line, index) => (
                       <div
-                        key={item.key}
-                        className={`rounded-lg border p-3 transition-colors ${
-                          isActive
-                            ? "border-red-300 bg-red-50/70"
-                            : "bg-card"
+                        key={`${operation}-${index}`}
+                        className={`flex min-w-max gap-3 rounded px-2 py-1 ${
+                          activeLine === index
+                            ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
+                            : ""
                         }`}
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs font-semibold">
-                            {item.title}
-                          </p>
+                        <span className="w-5 shrink-0 select-none text-right text-slate-500">
+                          {index + 1}
+                        </span>
 
-                          <Badge
-                            variant="outline"
-                            className={`font-mono text-[10px] ${
-                              isActive
-                                ? "border-red-300 text-red-700"
-                                : ""
-                            }`}
-                          >
-                            {item.time}
-                          </Badge>
-                        </div>
-
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {CODE_INFO[item.key].description}
-                        </p>
+                        <span
+                          className={`whitespace-pre ${
+                            line.trim().startsWith("//")
+                              ? "italic text-sky-400/70"
+                              : ""
+                          }`}
+                        >
+                          {line}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
 
-                <div className="mt-3 rounded-lg border bg-muted/20 p-3">
-                  <p className="text-xs font-semibold">Space Complexity</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    An adjacency-list graph requires O(V + E) space, where V
-                    is the number of vertices and E is the number of edges.
-                    BFS and DFS use up to O(V) additional space for visited
-                    vertices and traversal data.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+                  <div className={`${innerBox} bg-muted/30 p-4`}>
+                    <p className="mb-2 text-xs font-medium">How it works</p>
+                    <ol className="list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                      {info.steps.map((step, index) => (
+                        <li key={`${operation}-step-${index}`}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* TIME COMPLEXITY */}
+              <Card
+                className={`${cardCls} flex min-w-0 flex-col overflow-hidden md:max-h-[560px]`}
+              >
+                <CardHeader className="p-4 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Time Complexity
+                  </CardTitle>
+
+                  <CardDescription className="text-xs">
+                    Performance of graph operations and algorithms
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="vis-scroll flex-1 overflow-y-scroll p-4 pt-1">
+                  <div className="space-y-3">
+                    {complexityRows.map((item) => {
+                      const isActive = item.key === operation;
+
+                      return (
+                        <div
+                          key={item.key}
+                          className={`rounded-xl border p-4 transition-colors ${
+                            isActive
+                              ? "border-red-300 bg-red-50"
+                              : "border-[#BFD8D8] bg-card"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-medium">{item.title}</p>
+
+                            <Badge
+                              variant="outline"
+                              className={`rounded-full font-mono text-[10px] ${
+                                isActive
+                                  ? "border-red-300 text-red-600"
+                                  : "border-[#BFD8D8]"
+                              }`}
+                            >
+                              {item.time}
+                            </Badge>
+                          </div>
+
+                          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                            {CODE_INFO[item.key].description}
+                          </p>
+                        </div>
+                      );
+                    })}
+
+                    <div className={`${innerBox} bg-muted/30 p-4`}>
+                      <p className="text-xs font-medium">Space Complexity</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        An adjacency-list graph requires O(V + E) space, where
+                        V is the number of vertices and E is the number of
+                        edges. BFS and DFS use up to O(V) additional space for
+                        visited vertices and traversal data.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );

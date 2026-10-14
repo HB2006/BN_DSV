@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Play, Pause, Undo2, Redo2, Gauge } from "lucide-react";
 import type { ListNode } from "./type";
 import {
@@ -53,8 +53,29 @@ type HistoryEntry = {
 };
 
 type HistoryMeta = Omit<HistoryEntry, "id" | "text">;
-
 type Step = { line: number | null; run: () => void };
+
+/* ---------- SHARED STYLE TOKENS (match the Stack / Queue pages) ---------- */
+
+// Card: soft teal border, rounded-2xl
+const cardCls = "rounded-2xl border-[#BFD8D8] bg-card shadow-none";
+
+// Inner boxes (stats, how-it-works, traversal, etc.)
+const innerBox = "rounded-xl border border-[#BFD8D8]";
+
+// Operation buttons: teal fill, tan/orange border, bold white text
+const opButton =
+  "h-8 w-full rounded-lg border border-[#E0A96D] bg-secondary text-xs font-semibold text-white hover:bg-secondary/90";
+
+// Playback buttons: coral fill, teal border (disabled state fades via opacity)
+const coralButton =
+  "gap-2 rounded-lg border border-[#0F6B6D] bg-[#F08080] font-semibold text-white hover:bg-[#E56B6B] hover:text-white disabled:opacity-50 dark:bg-[#F08080] dark:hover:bg-[#E56B6B]";
+
+// Zoom buttons: outlined teal, cream background
+const zoomButton =
+  "h-8 rounded-lg border border-[#0F6B6D] bg-background px-0 text-[#0F6B6D] hover:bg-background/80";
+
+const inputCls = "h-9 rounded-lg border-[#BFD8D8] bg-background text-sm";
 
 const pseudocode: Record<Operation, CodeInfo> = {
   "insert-head": {
@@ -169,7 +190,7 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 
   traverse: {
-    title: "Traverse Linked List",
+    title: "Traverse",
     lines: [
       "current = head",
       "while current != null:",
@@ -187,7 +208,7 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 
   clear: {
-    title: "Clear Linked List",
+    title: "Clear List",
     lines: ["head = null", "size = 0", "return"],
     explanation: [
       "Set the head pointer to null.",
@@ -198,49 +219,55 @@ const pseudocode: Record<Operation, CodeInfo> = {
   },
 };
 
-const complexityRows = [
+const complexityRows: {
+  operation: string;
+  key: Operation;
+  time: string;
+  why: string;
+}[] = [
   {
     operation: "Insert at Head",
+    key: "insert-head",
     time: "O(1)",
     why: "Updates the head pointer directly.",
   },
   {
     operation: "Insert at Tail",
+    key: "insert-tail",
     time: "O(n)",
     why: "Traverses to the last node.",
   },
   {
     operation: "Insert at Index",
+    key: "insert-position",
     time: "O(n)",
     why: "Finds the insertion position.",
   },
   {
     operation: "Delete by Value",
+    key: "delete-value",
     time: "O(n)",
     why: "Searches for the target node.",
   },
   {
     operation: "Search",
+    key: "search",
     time: "O(n)",
     why: "May inspect every node.",
   },
   {
     operation: "Traverse",
+    key: "traverse",
     time: "O(n)",
     why: "Visits every node once.",
   },
   {
     operation: "Clear List",
+    key: "clear",
     time: "O(1)",
     why: "Resets the head reference.",
   },
 ];
-
-const primaryButton =
-  "bg-[#D8A7B1] text-[#4D3039] hover:bg-[#C9919D] dark:bg-[#D8A7B1] dark:hover:bg-[#E2BAC2]"
-
-const secondaryButton =
-  "h-7 w-full justify-start border border-[#0F6B6D] bg-[#0F6B6D] px-2 text-xs text-white hover:border-[#0B5557] hover:bg-[#0B5557] hover:text-white dark:border-[#0F6B6D] dark:bg-[#0F6B6D] dark:text-white dark:hover:border-[#0B5557] dark:hover:bg-[#0B5557] dark:hover:text-white";
 
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 1.6;
@@ -253,13 +280,16 @@ export function LinkedListVisualizer() {
     { id: 2, value: 20 },
     { id: 3, value: 30 },
   ]);
+
   const [value, setValue] = useState("40");
   const [position, setPosition] = useState("1");
   const [nextId, setNextId] = useState(4);
   const [activeNode, setActiveNode] = useState<NodeKey | null>(null);
   const [operation, setOperation] = useState<Operation>("insert-head");
   const [activeLine, setActiveLine] = useState<number | null>(null);
-  const [message, setMessage] = useState("Choose an operation to get started.");
+  const [message, setMessage] = useState(
+    "Choose an operation to get started."
+  );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [replayEntryId, setReplayEntryId] = useState<number | null>(null);
   const [traversal, setTraversal] = useState<number[] | null>(null);
@@ -268,49 +298,50 @@ export function LinkedListVisualizer() {
   const [maxValue, setMaxValue] = useState("100");
   const [zoom, setZoom] = useState(1);
 
-  // Playback + undo/redo state
   const [isPlaying, setIsPlaying] = useState(false);
   const [animationSpeed, setAnimationSpeed] = useState("1");
   const [undoStack, setUndoStack] = useState<ListNode[][]>([]);
   const [redoStack, setRedoStack] = useState<ListNode[][]>([]);
   const selectedCode = pseudocode[operation];
 
-  // Latest-value refs so timer callbacks never see stale state
   const listRef = useRef(list);
   listRef.current = list;
+
   const nextIdRef = useRef(nextId);
   nextIdRef.current = nextId;
+
   const speedRef = useRef(animationSpeed);
   speedRef.current = animationSpeed;
 
-  // Replay machinery
   const playbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const framesRef = useRef<Step[] | null>(null);
   const frameIndexRef = useRef(0);
   const replayOriginalRef = useRef<ListNode[] | null>(null);
   const historyIdRef = useRef(1);
 
-  // New-node animation tracking
   const [newIds, setNewIds] = useState<NodeKey[]>([]);
-  const prevIdsRef = useRef<Set<NodeKey>>(new Set(list.map((n) => n.id)));
+  const prevIdsRef = useRef<Set<NodeKey>>(
+    new Set(list.map((node) => node.id))
+  );
 
-  // Detect any node that appeared (insert, redo, undo of delete, generate, replay)
   useEffect(() => {
-    const prev = prevIdsRef.current;
-    const ids = list.map((n) => n.id as NodeKey);
-    const added = ids.filter((id) => !prev.has(id));
+    const previousIds = prevIdsRef.current;
+    const ids = list.map((node) => node.id as NodeKey);
+    const added = ids.filter((id) => !previousIds.has(id));
+
     prevIdsRef.current = new Set(ids);
 
     if (added.length === 0) {
       setNewIds([]);
       return;
     }
+
     setNewIds(added);
-    const t = setTimeout(() => setNewIds([]), 1600);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setNewIds([]), 1600);
+
+    return () => clearTimeout(timer);
   }, [list]);
 
-  // Clear playback timer on unmount
   useEffect(() => {
     return () => {
       if (playbackTimer.current !== null) {
@@ -320,11 +351,15 @@ export function LinkedListVisualizer() {
   }, []);
 
   function zoomIn() {
-    setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10));
+    setZoom((current) =>
+      Math.min(MAX_ZOOM, Math.round((current + ZOOM_STEP) * 10) / 10)
+    );
   }
 
   function zoomOut() {
-    setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10));
+    setZoom((current) =>
+      Math.max(MIN_ZOOM, Math.round((current - ZOOM_STEP) * 10) / 10)
+    );
   }
 
   function record(text: string, meta?: HistoryMeta) {
@@ -334,13 +369,16 @@ export function LinkedListVisualizer() {
         text,
         ...meta,
       };
+
       setHistory((old) => [entry, ...old].slice(0, MAX_HISTORY));
     }
+
     setMessage(text);
   }
 
   function updateList(nextList: ListNode[]) {
     const current = listRef.current;
+
     setUndoStack((old) => [...old, [...current]]);
     setRedoStack([]);
     listRef.current = nextList;
@@ -351,46 +389,55 @@ export function LinkedListVisualizer() {
 
   /* ---------- HISTORY REPLAY ---------- */
 
-  // Stops any replay and puts the real list back
-  function abortReplay() {
+  const abortReplay = useCallback(() => {
     if (playbackTimer.current !== null) {
       clearTimeout(playbackTimer.current);
       playbackTimer.current = null;
     }
+
     setIsPlaying(false);
+
     if (replayOriginalRef.current) {
       const original = replayOriginalRef.current;
       replayOriginalRef.current = null;
       listRef.current = original;
       setList(original);
     }
+
     framesRef.current = null;
     frameIndexRef.current = 0;
     setReplayEntryId(null);
     setActiveNode(null);
     setActiveLine(null);
-  }
+  }, []);
 
   function runFrames() {
     const tick = () => {
       const frames = framesRef.current;
+
       if (!frames) return;
-      const i = frameIndexRef.current;
-      if (i >= frames.length) {
+
+      const index = frameIndexRef.current;
+
+      if (index >= frames.length) {
         playbackTimer.current = null;
         framesRef.current = null;
         frameIndexRef.current = 0;
+        replayOriginalRef.current = null;
         setIsPlaying(false);
         return;
       }
-      frameIndexRef.current = i + 1;
-      setActiveLine(frames[i].line);
-      frames[i].run();
+
+      frameIndexRef.current = index + 1;
+      setActiveLine(frames[index].line);
+      frames[index].run();
+
       playbackTimer.current = setTimeout(
         tick,
         1000 / Number(speedRef.current)
       );
     };
+
     tick();
   }
 
@@ -399,13 +446,13 @@ export function LinkedListVisualizer() {
       clearTimeout(playbackTimer.current);
       playbackTimer.current = null;
     }
+
     setIsPlaying(false);
   }
 
   function handlePlay() {
     if (isPlaying) return;
 
-    // Resume a paused replay
     if (
       framesRef.current &&
       frameIndexRef.current < framesRef.current.length
@@ -422,17 +469,18 @@ export function LinkedListVisualizer() {
       return;
     }
 
-    const entries = history.slice().reverse(); // oldest first
-    const original = listRef.current;
+    const entries = history.slice().reverse();
+    const original = [...listRef.current];
+
     replayOriginalRef.current = original;
 
     const frames: Step[] = [];
 
-    // 1. Rewind to the state before the first recorded operation
     frames.push({
       line: null,
       run: () => {
         const start = entries[0].before;
+
         listRef.current = start;
         setList(start);
         setActiveNode(null);
@@ -442,32 +490,36 @@ export function LinkedListVisualizer() {
       },
     });
 
-    // 2. Two frames per recorded operation: announce, then apply
     entries.forEach((entry) => {
       const title = pseudocode[entry.op].title;
+
       frames.push({
         line: 0,
         run: () => {
           setOperation(entry.op);
           setReplayEntryId(entry.id);
           setTraversal(null);
-          setActiveNode(entry.op === "delete-value" ? entry.activeId : null);
+          setActiveNode(
+            entry.op === "delete-value" ? entry.activeId : null
+          );
           setMessage(`Replaying: ${title}`);
         },
       });
+
       frames.push({
         line: entry.line,
         run: () => {
           listRef.current = entry.after;
           setList(entry.after);
-          setActiveNode(entry.op === "delete-value" ? null : entry.activeId);
+          setActiveNode(
+            entry.op === "delete-value" ? null : entry.activeId
+          );
           setTraversal(entry.traversal);
           setMessage(entry.text);
         },
       });
     });
 
-    // 3. Put the real list back (matters if you used Undo/Redo earlier)
     frames.push({
       line: null,
       run: () => {
@@ -490,27 +542,39 @@ export function LinkedListVisualizer() {
 
   function handleUndo() {
     abortReplay();
+
     if (undoStack.length === 0) return;
-    const current = listRef.current;
+
+    const current = [...listRef.current];
     const previous = undoStack[undoStack.length - 1];
-    setRedoStack((old) => [...old, [...current]]);
+
+    setRedoStack((old) => [...old, current]);
     setUndoStack((old) => old.slice(0, -1));
+
     listRef.current = [...previous];
     setList([...previous]);
     setTraversal(null);
+    setActiveNode(null);
+    setActiveLine(null);
     setMessage("Undo successful.");
   }
 
   function handleRedo() {
     abortReplay();
+
     if (redoStack.length === 0) return;
-    const current = listRef.current;
+
+    const current = [...listRef.current];
     const next = redoStack[redoStack.length - 1];
-    setUndoStack((old) => [...old, [...current]]);
+
+    setUndoStack((old) => [...old, current]);
     setRedoStack((old) => old.slice(0, -1));
+
     listRef.current = [...next];
     setList([...next]);
     setTraversal(null);
+    setActiveNode(null);
+    setActiveLine(null);
     setMessage("Redo successful.");
   }
 
@@ -526,22 +590,24 @@ export function LinkedListVisualizer() {
   }
 
   function insertAtHead() {
-    const n = readNumber();
-    if (n === null) return;
+    const number = readNumber();
+    if (number === null) return;
 
     abortReplay();
-    const before = listRef.current;
+
+    const before = [...listRef.current];
     const id = nextIdRef.current;
-    const after = insertHead(before, n, id);
+    const after = insertHead(before, number, id);
 
     setOperation("insert-head");
     setActiveLine(2);
     updateList(after);
     setActiveNode(id);
+
     nextIdRef.current = id + 1;
     setNextId(id + 1);
 
-    record(`Inserted ${n} at the head.`, {
+    record(`Inserted ${number} at the head.`, {
       op: "insert-head",
       before,
       after,
@@ -552,22 +618,24 @@ export function LinkedListVisualizer() {
   }
 
   function insertAtTail() {
-    const n = readNumber();
-    if (n === null) return;
+    const number = readNumber();
+    if (number === null) return;
 
     abortReplay();
-    const before = listRef.current;
+
+    const before = [...listRef.current];
     const id = nextIdRef.current;
-    const after = insertTail(before, n, id);
+    const after = insertTail(before, number, id);
 
     setOperation("insert-tail");
     setActiveLine(7);
     updateList(after);
     setActiveNode(id);
+
     nextIdRef.current = id + 1;
     setNextId(id + 1);
 
-    record(`Inserted ${n} at the tail.`, {
+    record(`Inserted ${number} at the tail.`, {
       op: "insert-tail",
       before,
       after,
@@ -578,11 +646,11 @@ export function LinkedListVisualizer() {
   }
 
   function insertAtIndex() {
-    const n = readNumber();
-    if (n === null) return;
+    const number = readNumber();
+    if (number === null) return;
 
     const index = Number(position);
-    const before = listRef.current;
+    const before = [...listRef.current];
 
     if (
       position.trim() === "" ||
@@ -596,18 +664,20 @@ export function LinkedListVisualizer() {
 
     try {
       abortReplay();
+
       const id = nextIdRef.current;
-      const after = insertAtPosition(before, n, index, id);
+      const after = insertAtPosition(before, number, index, id);
       const line = index === 0 ? 3 : 9;
 
       setOperation("insert-position");
       setActiveLine(line);
       updateList(after);
       setActiveNode(id);
+
       nextIdRef.current = id + 1;
       setNextId(id + 1);
 
-      record(`Inserted ${n} at index ${index}.`, {
+      record(`Inserted ${number} at index ${index}.`, {
         op: "insert-position",
         before,
         after,
@@ -616,17 +686,20 @@ export function LinkedListVisualizer() {
         line,
       });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Insertion failed.");
+      setMessage(
+        error instanceof Error ? error.message : "Insertion failed."
+      );
     }
   }
 
   function removeValue() {
-    const n = readNumber();
-    if (n === null) return;
+    const number = readNumber();
+    if (number === null) return;
 
     abortReplay();
-    const before = listRef.current;
-    const match = before.find((node) => node.value === n);
+
+    const before = [...listRef.current];
+    const match = before.find((node) => node.value === number);
 
     setOperation("delete-value");
     setTraversal(null);
@@ -634,16 +707,16 @@ export function LinkedListVisualizer() {
     if (!match) {
       setActiveNode(null);
       setActiveLine(0);
-      setMessage(`Value ${n} was not found.`);
+      record(`Value ${number} was not found.`);
       return;
     }
 
-    const after = deleteValue(before, n);
+    const after = deleteValue(before, number);
 
     setActiveLine(7);
     updateList(after);
 
-    record(`Deleted the first occurrence of ${n}.`, {
+    record(`Deleted the first occurrence of ${number}.`, {
       op: "delete-value",
       before,
       after,
@@ -654,16 +727,17 @@ export function LinkedListVisualizer() {
   }
 
   function search() {
-    const n = readNumber();
-    if (n === null) return;
+    const number = readNumber();
+    if (number === null) return;
 
     abortReplay();
-    const before = listRef.current;
+
+    const before = [...listRef.current];
 
     setOperation("search");
     setTraversal(null);
 
-    const index = searchValue(before, n);
+    const index = searchValue(before, number);
     const line = index === -1 ? 7 : 4;
     const activeId = index === -1 ? null : before[index].id;
 
@@ -672,8 +746,8 @@ export function LinkedListVisualizer() {
 
     record(
       index === -1
-        ? `Value ${n} was not found.`
-        : `Found ${n} at index ${index}.`,
+        ? `Value ${number} was not found.`
+        : `Found ${number} at index ${index}.`,
       {
         op: "search",
         before,
@@ -687,7 +761,8 @@ export function LinkedListVisualizer() {
 
   function traverse() {
     abortReplay();
-    const before = listRef.current;
+
+    const before = [...listRef.current];
 
     setOperation("traverse");
     setActiveLine(2);
@@ -713,7 +788,8 @@ export function LinkedListVisualizer() {
 
   function clearList() {
     abortReplay();
-    const before = listRef.current;
+
+    const before = [...listRef.current];
     const after: ListNode[] = [];
 
     setOperation("clear");
@@ -736,6 +812,9 @@ export function LinkedListVisualizer() {
     const max = Number(maxValue);
 
     if (
+      randomCount.trim() === "" ||
+      minValue.trim() === "" ||
+      maxValue.trim() === "" ||
       !Number.isInteger(count) ||
       count < 1 ||
       count > 30 ||
@@ -743,12 +822,15 @@ export function LinkedListVisualizer() {
       !Number.isInteger(max) ||
       min > max
     ) {
-      setMessage("Use 1–30 nodes and valid integer minimum/maximum values.");
+      setMessage(
+        "Use 1–30 nodes and valid integer minimum/maximum values."
+      );
       return;
     }
 
     abortReplay();
-    const before = listRef.current;
+
+    const before = [...listRef.current];
     const startId = nextIdRef.current;
 
     const generated: ListNode[] = Array.from(
@@ -760,8 +842,10 @@ export function LinkedListVisualizer() {
     );
 
     updateList(generated);
+
     nextIdRef.current = startId + count;
     setNextId(startId + count);
+
     setOperation("traverse");
     setActiveLine(null);
 
@@ -779,588 +863,610 @@ export function LinkedListVisualizer() {
     <main className="flex min-h-screen flex-col bg-background text-foreground">
       <style>{`
         @keyframes node-enter {
-          0%   { opacity: 0; transform: translateX(70px) scale(0.9); }
-          60%  { opacity: 1; transform: translateX(-6px) scale(1.03); }
+          0% { opacity: 0; transform: translateX(70px) scale(0.9); }
+          60% { opacity: 1; transform: translateX(-6px) scale(1.03); }
           100% { opacity: 1; transform: translateX(0) scale(1); }
         }
+
         @keyframes node-glow {
-          0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+          0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
           100% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
         }
+
         @keyframes badge-pop {
-          0%   { transform: scale(0); }
-          60%  { transform: scale(1.25); }
+          0% { transform: scale(0); }
+          60% { transform: scale(1.25); }
           100% { transform: scale(1); }
         }
+
         @media (prefers-reduced-motion: reduce) {
           .anim-new { animation: none !important; }
         }
+
+        /* Dark, always-visible scrollbars (sidebar + complexity list) */
+        .vis-scroll { scrollbar-width: thin; scrollbar-color: #3f4a4f transparent; }
+        .vis-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+        .vis-scroll::-webkit-scrollbar-track { background: transparent; }
+        .vis-scroll::-webkit-scrollbar-thumb {
+          background: #3f4a4f;
+          border-radius: 999px;
+          border: 3px solid transparent;
+          background-clip: content-box;
+        }
       `}</style>
 
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-[#0F6B6D] sm:text-2xl">
-            Linked List Visualizer
-          </h1>
-          <p className="text-xs text-[#0F6B6D]">
-            Explore pointers, operations, pseudocode, and complexity.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+        {/* Header */}
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b py-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[#0F6B6D]">
+              Linked List Visualizer
+            </h1>
+            <p className="text-xs text-[#0F6B6D]">
+              Explore pointers, operations, pseudocode, and complexity.
+            </p>
+          </div>
 
-        <Badge
-          variant="outline"
-          className="border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-        >
-          Singly Linked List
-        </Badge>
-      </header>
+          <Badge
+            variant="outline"
+            className="rounded-full border-pink-300 bg-pink-50 text-pink-700 hover:bg-pink-50"
+          >
+            Singly · Linked List
+          </Badge>
+        </header>
 
-      <div className="grid grid-cols-1 items-start gap-3 px-4 pb-4 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:px-8">
-        <aside className="min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="border-b border-border px-3 py-2">
-              <CardTitle className="text-sm">Operations</CardTitle>
-            </CardHeader>
-
-            <CardContent className="space-y-2 px-3 py-3">
-              <div className="space-y-1">
-                <label htmlFor="ll-value" className="text-xs font-medium">
-                  Node value
-                </label>
-                <Input
-                  id="ll-value"
-                  type="number"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="Value"
-                  className="h-7 bg-background px-2 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label htmlFor="ll-position" className="text-xs font-medium">
-                  Index (0–{list.length})
-                </label>
-                <Input
-                  id="ll-position"
-                  type="number"
-                  min="0"
-                  max={list.length}
-                  value={position}
-                  onChange={(e) => setPosition(e.target.value)}
-                  placeholder="Zero-based index"
-                  className="h-7 bg-background px-2 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1 pt-1">
-                <Button
-                  onClick={insertAtHead}
-                  className={secondaryButton}
-                  variant="outline"
-                >
-                  Insert at Head
-                </Button>
-                <Button
-                  onClick={insertAtTail}
-                  className={secondaryButton}
-                  variant="outline"
-                >
-                  Insert at Tail
-                </Button>
-                <Button
-                  onClick={insertAtIndex}
-                  className={secondaryButton}
-                  variant="outline"
-                >
-                  Insert at Index
-                </Button>
-                <Button
-                  onClick={removeValue}
-                  className={secondaryButton}
-                  variant="outline"
-                >
-                  Delete by Value
-                </Button>
-                <Button
-                  onClick={search}
-                  className={secondaryButton}
-                  variant="outline"
-                >
-                  Search
-                </Button>
-                <Button
-                  onClick={traverse}
-                  className={secondaryButton}
-                  variant="outline"
-                >
-                  Traverse
-                </Button>
-                <Button
-                  onClick={clearList}
-                  className="h-7 w-full justify-start border-red-200 bg-red-50 px-2 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-                  variant="outline"
-                >
-                  Clear List
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="px-3 pb-1 pt-3">
-              <CardTitle className="text-sm">Random Nodes</CardTitle>
-            </CardHeader>
-
-            <CardContent className="space-y-2 px-3 pb-3">
-              <div className="space-y-1">
-                <label
-                  htmlFor="ll-count"
-                  className="text-[11px] font-medium text-muted-foreground"
-                >
-                  Number of nodes (1–30)
-                </label>
-                <Input
-                  id="ll-count"
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={randomCount}
-                  onChange={(e) => setRandomCount(e.target.value)}
-                  className="h-7 px-2 text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="min-w-0 space-y-1">
-                  <label
-                    htmlFor="ll-min"
-                    className="text-[11px] font-medium text-muted-foreground"
-                  >
-                    Minimum
-                  </label>
-                  <Input
-                    id="ll-min"
-                    type="number"
-                    value={minValue}
-                    onChange={(e) => setMinValue(e.target.value)}
-                    className="h-7 px-2 text-xs"
-                  />
-                </div>
-
-                <div className="min-w-0 space-y-1">
-                  <label
-                    htmlFor="ll-max"
-                    className="text-[11px] font-medium text-muted-foreground"
-                  >
-                    Maximum
-                  </label>
-                  <Input
-                    id="ll-max"
-                    type="number"
-                    value={maxValue}
-                    onChange={(e) => setMaxValue(e.target.value)}
-                    className="h-7 px-2 text-xs"
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={generateRandom}
-                className={`h-7 w-full text-xs ${primaryButton}`}
-              >
-                Generate List
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pb-1 pt-3">
-              <div>
-                <CardTitle className="text-sm">History</CardTitle>
-                <CardDescription className="text-[11px]">
-                  Press Play to replay
-                </CardDescription>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  abortReplay();
-                  setHistory([]);
-                }}
-                className="h-6 px-2 text-[11px] text-muted-foreground"
-              >
-                Clear
-              </Button>
-            </CardHeader>
-
-            <CardContent className="px-3 pb-3">
-              {history.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Recent operations appear here.
-                </p>
-              ) : (
-                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
-                  {history.map((item) => (
-                    <li
-                      key={item.id}
-                      className={`flex gap-1.5 rounded px-1 text-[11px] leading-snug transition-colors ${
-                        replayEntryId === item.id
-                          ? "bg-red-50 font-medium text-red-800 dark:bg-red-950/40 dark:text-red-200"
-                          : ""
-                      }`}
-                    >
-                      <span className="font-bold text-red-600">↳</span>
-                      <span className="min-w-0 break-words">{item.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Alert className="border-red-200 bg-red-50 px-3 py-2 text-red-950 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100">
-            <AlertDescription className="text-[11px] leading-snug">
-              <span className="font-semibold text-red-700 dark:text-red-300">
-                Status:{" "}
-              </span>
-              {message}
-            </AlertDescription>
-          </Alert>
-        </aside>
-
-        <section className="flex min-w-0 flex-col gap-3">
-          <Card className="min-w-0 overflow-hidden border-border bg-card shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-3 py-3 sm:px-4">
-              <div className="min-w-0">
-                <CardTitle className="text-base">
-                  Visualization Playground
+        {/* Main layout */}
+        <div className="grid grid-cols-1 items-start gap-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          {/* Sidebar */}
+          <aside className="vis-scroll min-w-0 space-y-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-scroll lg:pr-1">
+            {/* OPERATIONS (random generator lives in the same card) */}
+            <Card className={cardCls}>
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Operations
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Follow the arrows to understand each node&apos;s next pointer.
+                  Modify your linked list
                 </CardDescription>
-              </div>
+              </CardHeader>
 
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={zoomOut}
-                  disabled={zoom <= MIN_ZOOM}
-                  aria-label="Zoom out"
-                  className="h-7 w-7 p-0 text-base"
-                >
-                  −
-                </Button>
-
-                <button
-                  type="button"
-                  onClick={() => setZoom(1)}
-                  title="Reset zoom"
-                  className="h-7 min-w-[3.25rem] rounded-md border border-border bg-muted/40 px-2 text-xs font-medium hover:bg-muted"
-                >
-                  {Math.round(zoom * 100)}%
-                </button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={zoomIn}
-                  disabled={zoom >= MAX_ZOOM}
-                  aria-label="Zoom in"
-                  className="h-7 w-7 p-0 text-base"
-                >
-                  +
-                </Button>
-              </div>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-3 p-3 sm:p-4">
-              {/* PLAYBACK CONTROLS */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handlePlay}
-                    disabled={isPlaying}
-                    className="gap-2"
-                  >
-                    <Play className="h-4 w-4" /> Play
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handlePause}
-                    disabled={!isPlaying}
-                    className="gap-2"
-                  >
-                    <Pause className="h-4 w-4" /> Pause
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleUndo}
-                    disabled={undoStack.length === 0}
-                    className="gap-2"
-                  >
-                    <Undo2 className="h-4 w-4" /> Undo
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRedo}
-                    disabled={redoStack.length === 0}
-                    className="gap-2"
-                  >
-                    <Redo2 className="h-4 w-4" /> Redo
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-muted-foreground" />
-                  <label htmlFor="animation-speed" className="text-sm">
-                    Speed
+              <CardContent className="space-y-2 p-4 pt-1">
+                <div className="space-y-1">
+                  <label htmlFor="ll-value" className="text-xs font-medium">
+                    Node value
                   </label>
-                  <select
-                    id="animation-speed"
-                    value={animationSpeed}
-                    onChange={(event) => setAnimationSpeed(event.target.value)}
-                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                  >
-                    <option value="0.5">0.5×</option>
-                    <option value="1">1×</option>
-                    <option value="2">2×</option>
-                    <option value="4">4×</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Stats remain outside the zoomed visualization. */}
-              <div className="grid shrink-0 grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40 py-2 text-center">
-                <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Head</p>
-                  <p className="break-words text-base font-bold">
-                    {list.length ? list[0].value : "NULL"}
-                  </p>
+                  <Input
+                    id="ll-value"
+                    type="number"
+                    value={value}
+                    onChange={(event) => setValue(event.target.value)}
+                    placeholder="Enter value"
+                    className={inputCls}
+                  />
                 </div>
 
-                <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Nodes</p>
-                  <p className="text-base font-bold">{list.length}</p>
+                <div className="space-y-1">
+                  <label htmlFor="ll-position" className="text-xs font-medium">
+                    Index (0–{list.length})
+                  </label>
+                  <Input
+                    id="ll-position"
+                    type="number"
+                    min="0"
+                    max={list.length}
+                    value={position}
+                    onChange={(event) => setPosition(event.target.value)}
+                    placeholder="Zero-based index"
+                    className={inputCls}
+                  />
                 </div>
 
-                <div className="min-w-0 px-1">
-                  <p className="text-[11px] text-muted-foreground">Tail</p>
-                  <p className="break-words text-base font-bold">
-                    {list.length ? list[list.length - 1].value : "NULL"}
-                  </p>
-                </div>
-              </div>
+                <Button onClick={insertAtHead} className={opButton}>
+                  Insert at Head
+                </Button>
 
-              {/* Only this viewport contains the zoomed linked-list drawing. */}
-              <div className="h-[350px] overflow-auto rounded-xl border border-border bg-muted/20 p-3 sm:h-[420px] sm:p-4">
-                {list.length === 0 ? (
-                  <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center">
-                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-2xl text-red-600 dark:bg-red-950/50">
-                      ∅
-                    </div>
+                <Button onClick={insertAtTail} className={opButton}>
+                  Insert at Tail
+                </Button>
 
-                    <p className="text-lg font-semibold">Your list is empty</p>
+                <Button onClick={insertAtIndex} className={opButton}>
+                  Insert at Index
+                </Button>
 
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Insert a node or generate a random list to begin.
-                    </p>
+                <Button onClick={removeValue} className={opButton}>
+                  Delete by Value
+                </Button>
+
+                <Button onClick={search} className={opButton}>
+                  Search Value
+                </Button>
+
+                <Button onClick={traverse} className={opButton}>
+                  Traverse List
+                </Button>
+
+                <Button onClick={clearList} className={opButton}>
+                  Clear List
+                </Button>
+
+                {/* RANDOM LIST */}
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="min-w-0 space-y-1">
+                    <label htmlFor="ll-min" className="text-xs font-medium">
+                      Minimum
+                    </label>
+                    <Input
+                      id="ll-min"
+                      type="number"
+                      value={minValue}
+                      onChange={(event) => setMinValue(event.target.value)}
+                      className={inputCls}
+                    />
                   </div>
+
+                  <div className="min-w-0 space-y-1">
+                    <label htmlFor="ll-max" className="text-xs font-medium">
+                      Maximum
+                    </label>
+                    <Input
+                      id="ll-max"
+                      type="number"
+                      value={maxValue}
+                      onChange={(event) => setMaxValue(event.target.value)}
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="ll-count" className="text-xs font-medium">
+                    Number of nodes (1–30)
+                  </label>
+                  <Input
+                    id="ll-count"
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={randomCount}
+                    onChange={(event) => setRandomCount(event.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+
+                <Button onClick={generateRandom} className={opButton}>
+                  Generate List
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* HISTORY */}
+            <Card className={cardCls}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                <div>
+                  <CardTitle className="text-sm font-medium">History</CardTitle>
+                  <CardDescription className="text-xs">
+                    Press Play to replay
+                  </CardDescription>
+                </div>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    abortReplay();
+                    setHistory([]);
+                    setMessage("History cleared.");
+                  }}
+                  className="h-6 px-2 text-xs text-muted-foreground"
+                >
+                  Clear
+                </Button>
+              </CardHeader>
+
+              <CardContent className="p-4 pt-1">
+                {history.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Operations will appear here.
+                  </p>
                 ) : (
-                  <div className="flex min-h-full min-w-full items-center justify-center">
-                    <div
-                      className="flex w-max items-center py-8"
-                      style={{ zoom }}
-                    >
-                      <div className="mr-3 flex flex-col items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className="border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-                        >
-                          HEAD
-                        </Badge>
-
-                        <span className="text-2xl text-red-600">↓</span>
+                  <div className="vis-scroll max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {history.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`border-l-2 pl-2 text-xs transition-colors ${
+                          replayEntryId === item.id
+                            ? "border-red-600 bg-red-50 font-medium text-red-800"
+                            : "border-red-200 text-muted-foreground"
+                        }`}
+                      >
+                        {item.text}
                       </div>
-
-                      {list.map((node, index) => {
-                        const highlighted = activeNode === node.id;
-                        const isNew = newIds.includes(node.id);
-                        const newOrder = newIds.indexOf(node.id);
-
-                        return (
-                          <div key={node.id} className="flex items-center">
-                            <div
-                              style={
-                                isNew
-                                  ? {
-                                      animation: `node-enter 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${
-                                        newOrder * 120
-                                      }ms both, node-glow 1200ms ease-out ${
-                                        600 + newOrder * 120
-                                      }ms`,
-                                    }
-                                  : undefined
-                              }
-                              className={`anim-new relative flex h-24 w-24 flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 ${
-                                highlighted
-                                  ? "z-10 scale-105 border-red-500 bg-red-50 text-red-950 shadow-lg shadow-red-500/10 dark:bg-red-950/50 dark:text-red-100"
-                                  : "border-border bg-card text-card-foreground"
-                              }`}
-                            >
-                              <span
-                                className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                  highlighted
-                                    ? "bg-red-600 text-white"
-                                    : "bg-muted text-muted-foreground"
-                                }`}
-                              >
-                                {index}
-                              </span>
-
-                              {highlighted && (
-                                <span className="absolute -top-3 right-1 rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                                  ACTIVE
-                                </span>
-                              )}
-
-                              {isNew && (
-                                <span
-                                  className="absolute -right-2 -top-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
-                                  style={{
-                                    animation: "badge-pop 400ms ease-out both",
-                                  }}
-                                >
-                                  NEW
-                                </span>
-                              )}
-
-                              <span className="max-w-full break-all px-1 text-xl font-bold">
-                                {node.value}
-                              </span>
-
-                              <div className="mt-2 flex w-full items-center justify-between border-t border-border px-2 pt-1 text-[10px] text-muted-foreground">
-                                <span>next</span>
-
-                                <span
-                                  className={`h-2.5 w-2.5 rounded-full ${
-                                    highlighted ? "bg-red-600" : "bg-foreground"
-                                  }`}
-                                />
-                              </div>
-                            </div>
-
-                            {index < list.length - 1 ? (
-                              <div className="flex w-8 items-center justify-center sm:w-10">
-                                <span
-                                  className={`text-2xl transition-colors duration-300 ${
-                                    highlighted ||
-                                    activeNode === list[index + 1].id
-                                      ? "text-red-600"
-                                      : "text-muted-foreground"
-                                  }`}
-                                >
-                                  →
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 px-2">
-                                <span className="text-xl text-muted-foreground">
-                                  →
-                                </span>
-
-                                <Badge
-                                  variant="outline"
-                                  className="border-red-300 text-red-700 dark:border-red-900 dark:text-red-300"
-                                >
-                                  NULL
-                                </Badge>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    ))}
                   </div>
                 )}
-              </div>
+              </CardContent>
+            </Card>
 
-              {/* Traversal output is intentionally outside the zoom wrapper. */}
-              <div className="shrink-0 rounded-lg border border-border bg-card px-3 py-2">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold">Traversal Output</p>
+            {/* STATUS */}
+            <Alert className="rounded-xl border-red-100 bg-red-50/60">
+              <AlertDescription className="text-xs leading-relaxed text-red-900">
+                {message}
+              </AlertDescription>
+            </Alert>
+          </aside>
 
-                  <Badge variant="outline" className="text-[11px]">
-                    {traversal?.length ?? 0} values
-                  </Badge>
+          {/* Main content */}
+          <section className="flex min-w-0 flex-col gap-4">
+            {/* Visualization playground */}
+            <Card className={`${cardCls} min-w-0 overflow-hidden`}>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b border-[#BFD8D8] p-4">
+                <div className="min-w-0">
+                  <CardTitle className="text-base font-medium">
+                    Learn, Play and Create
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Follow the arrows to understand each node&apos;s next
+                    pointer.
+                  </CardDescription>
                 </div>
 
-                <p className="max-h-14 overflow-auto break-words rounded-md border border-border bg-muted/40 px-2 py-1.5 font-mono text-xs">
-                  {traversal !== null
-                    ? traversal.length
-                      ? `${traversal.join(" → ")} → NULL`
-                      : "NULL"
-                    : list.length
-                      ? `${list.map((node) => node.value).join(" → ")} → NULL`
-                      : "NULL"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Pseudocode and complexity stay in normal page flow. */}
-          <div className="grid min-w-0 grid-cols-1 items-start gap-3 md:grid-cols-2">
-            <Card className="min-w-0 border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base">Pseudocode</CardTitle>
-
-                  <Badge
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
                     variant="outline"
-                    className="max-w-[65%] truncate border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                    size="sm"
+                    onClick={zoomOut}
+                    disabled={zoom <= MIN_ZOOM}
+                    aria-label="Zoom out"
+                    className={`${zoomButton} w-8`}
                   >
-                    {selectedCode.title}
-                  </Badge>
+                    −
+                  </Button>
+
+                  <span className="min-w-12 text-center text-xs text-muted-foreground">
+                    {Math.round(zoom * 100)}%
+                  </span>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={zoomIn}
+                    disabled={zoom >= MAX_ZOOM}
+                    aria-label="Zoom in"
+                    className={`${zoomButton} w-8`}
+                  >
+                    +
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setZoom(1)}
+                    className={`${zoomButton} px-2 text-xs`}
+                  >
+                    Reset
+                  </Button>
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-3 p-3">
-                <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-slate-100 shadow-inner">
-                  <div className="min-w-max space-y-0.5 font-mono">
+              <CardContent className="flex min-w-0 flex-col gap-3 p-4">
+                {/* Playback controls */}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#BFD8D8] bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handlePlay}
+                      disabled={isPlaying}
+                      className={coralButton}
+                    >
+                      <Play className="h-4 w-4" />
+                      Play
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handlePause}
+                      disabled={!isPlaying}
+                      className={coralButton}
+                    >
+                      <Pause className="h-4 w-4" />
+                      Pause
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleUndo}
+                      disabled={undoStack.length === 0}
+                      className={coralButton}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      Undo
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRedo}
+                      disabled={redoStack.length === 0}
+                      className={coralButton}
+                    >
+                      <Redo2 className="h-4 w-4" />
+                      Redo
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Gauge className="h-4 w-4 text-muted-foreground" />
+                    <label htmlFor="animation-speed" className="text-sm">
+                      Speed
+                    </label>
+                    <select
+                      id="animation-speed"
+                      value={animationSpeed}
+                      onChange={(event) =>
+                        setAnimationSpeed(event.target.value)
+                      }
+                      className="h-9 rounded-lg border border-[#BFD8D8] bg-background px-3 text-sm"
+                    >
+                      <option value="0.5">0.5×</option>
+                      <option value="1">1×</option>
+                      <option value="2">2×</option>
+                      <option value="4">4×</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Statistics */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Head
+                    </p>
+                    <p className="truncate text-xl font-medium">
+                      {list.length ? list[0].value : "NULL"}
+                    </p>
+                  </div>
+
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Nodes
+                    </p>
+                    <p className="text-xl font-medium">{list.length}</p>
+                  </div>
+
+                  <div className={`${innerBox} min-w-0 bg-card p-3`}>
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground sm:text-xs">
+                      Tail
+                    </p>
+                    <p className="truncate text-xl font-medium">
+                      {list.length ? list[list.length - 1].value : "NULL"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Linked-list visualization */}
+                <div
+                  className={`${innerBox} flex min-h-[500px] min-w-0 flex-col overflow-hidden bg-card`}
+                >
+                  <div className="flex items-center justify-between border-b border-[#BFD8D8] px-3 py-2">
+                    <span className="text-xs font-medium">
+                      Linked List Structure
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full text-[10px]"
+                    >
+                      HEAD → NULL
+                    </Badge>
+                  </div>
+
+                  <div className="vis-scroll relative flex min-h-[450px] min-w-0 flex-1 overflow-auto p-6">
+                    {list.length === 0 ? (
+                      <div className="m-auto text-center">
+                        <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 text-2xl text-muted-foreground">
+                          ∅
+                        </div>
+                        <p className="text-sm font-medium">
+                          Your list is empty
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Insert a node or generate a random list to begin.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex min-h-full min-w-full items-center justify-center">
+                        <div
+                          className="flex w-max items-center py-12"
+                          style={{ zoom }}
+                        >
+                          <div className="mr-3 flex flex-col items-center gap-2">
+                            <Badge className="bg-red-600 text-white hover:bg-red-600">
+                              HEAD
+                            </Badge>
+                            <span className="text-xl text-red-600">↓</span>
+                          </div>
+
+                          {list.map((node, index) => {
+                            const highlighted = activeNode === node.id;
+                            const isNew = newIds.includes(node.id);
+                            const newOrder = newIds.indexOf(node.id);
+
+                            return (
+                              <div key={node.id} className="flex items-center">
+                                <div
+                                  style={
+                                    isNew
+                                      ? {
+                                          animation: `node-enter 600ms cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                                            newOrder * 120
+                                          }ms both, node-glow 1200ms ease-out ${
+                                            600 + newOrder * 120
+                                          }ms`,
+                                        }
+                                      : undefined
+                                  }
+                                  className={`anim-new relative flex h-24 w-24 flex-col items-center justify-center rounded-xl border-2 transition-all duration-300 ${
+                                    highlighted
+                                      ? "z-10 scale-105 border-red-600 bg-red-100 text-red-900 ring-2 ring-red-300"
+                                      : index === 0
+                                        ? "border-red-400 bg-red-50 text-red-800"
+                                        : "border-border bg-card text-card-foreground"
+                                  }`}
+                                >
+                                  <span
+                                    className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                      highlighted
+                                        ? "bg-red-600 text-white"
+                                        : "bg-muted text-muted-foreground"
+                                    }`}
+                                  >
+                                    {index}
+                                  </span>
+
+                                  {highlighted && (
+                                    <span className="absolute -right-2 -top-3 rounded-full bg-red-600 px-2 py-0.5 text-[9px] font-semibold text-white">
+                                      ACTIVE
+                                    </span>
+                                  )}
+
+                                  {isNew && (
+                                    <span
+                                      className="absolute -left-2 -top-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-semibold text-white"
+                                      style={{
+                                        animation:
+                                          "badge-pop 400ms ease-out both",
+                                      }}
+                                    >
+                                      NEW
+                                    </span>
+                                  )}
+
+                                  <span className="max-w-full break-all px-1 text-xl font-bold">
+                                    {node.value}
+                                  </span>
+
+                                  <div className="mt-2 flex w-full items-center justify-between border-t border-border px-2 pt-1 text-[10px] text-muted-foreground">
+                                    <span>next</span>
+                                    <span
+                                      className={`h-2.5 w-2.5 rounded-full ${
+                                        highlighted
+                                          ? "bg-red-600"
+                                          : "bg-foreground"
+                                      }`}
+                                    />
+                                  </div>
+                                </div>
+
+                                {index < list.length - 1 ? (
+                                  <div className="flex w-8 items-center justify-center sm:w-10">
+                                    <span
+                                      className={`text-2xl transition-colors duration-300 ${
+                                        highlighted ||
+                                        activeNode === list[index + 1].id
+                                          ? "text-red-600"
+                                          : "text-muted-foreground"
+                                      }`}
+                                    >
+                                      →
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 px-2">
+                                    <span className="text-xl text-muted-foreground">
+                                      →
+                                    </span>
+                                    <Badge
+                                      variant="outline"
+                                      className="rounded-full border-red-300 text-red-700"
+                                    >
+                                      NULL
+                                    </Badge>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Traversal output */}
+                <div className={`${innerBox} bg-card p-3`}>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold">Traversal Output</p>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full font-mono text-[10px]"
+                    >
+                      {traversal?.length ?? 0} values
+                    </Badge>
+                  </div>
+
+                  <p className="vis-scroll max-h-14 overflow-auto break-words rounded-md border border-[#BFD8D8] bg-muted/20 px-2 py-1.5 font-mono text-xs">
+                    {traversal !== null
+                      ? traversal.length
+                        ? `${traversal.join(" → ")} → NULL`
+                        : "NULL"
+                      : list.length
+                        ? `${list.map((node) => node.value).join(" → ")} → NULL`
+                        : "NULL"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pseudocode and complexity */}
+            <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2">
+              {/* PSEUDOCODE */}
+              <Card
+                className={`${cardCls} flex min-w-0 flex-col overflow-hidden`}
+              >
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-sm font-medium">
+                      Pseudocode
+                    </CardTitle>
+                    <Badge
+                      variant="outline"
+                      className="max-w-[65%] truncate rounded-full border-[#BFD8D8] text-xs"
+                    >
+                      {selectedCode.title}
+                    </Badge>
+                  </div>
+
+                  <CardDescription className="text-xs">
+                    Follow the selected operation step by step.
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="flex flex-col gap-3 p-4 pt-1">
+                  <div className="vis-scroll max-h-[260px] overflow-auto rounded-xl bg-[#020617] p-4 font-mono text-xs text-slate-100">
                     {selectedCode.lines.map((line, index) => (
                       <div
                         key={`${operation}-${index}`}
-                        className={`flex items-start gap-3 rounded px-2 py-1 transition-colors duration-200 ${
+                        className={`flex min-w-max gap-3 rounded px-2 py-1 ${
                           activeLine === index
-                            ? "bg-[#D8A7B1]/25 text-[#F2DCE1] ring-1 ring-[#D8A7B1]/50"
-                            : "hover:bg-[#D8A7B1]/10"
+                            ? "bg-red-500/25 text-red-200 ring-1 ring-red-400/40"
+                            : ""
                         }`}
                       >
                         <span className="w-5 shrink-0 select-none text-right text-slate-500">
-                          {activeLine === index ? "▶" : index + 1}
+                          {index + 1}
                         </span>
 
                         <span
                           className={
                             line.trim().startsWith("//")
-                              ? "text-emerald-300"
-                              : line.includes("return")
-                                ? "text-pink-300"
-                                : line.includes("if ") ||
-                                    line.includes("while ") ||
-                                    line.includes("repeat ")
-                                  ? "text-amber-200"
-                                  : "text-sky-100"
+                              ? "italic text-sky-400/70"
+                              : ""
                           }
                         >
                           {line || " "}
@@ -1368,103 +1474,83 @@ export function LinkedListVisualizer() {
                       </div>
                     ))}
                   </div>
-                </div>
 
-                <div className="rounded-xl border border-border bg-muted/30 p-3">
-                  <h3 className="mb-2 text-sm font-semibold text-red-700 dark:text-red-300">
-                    How it works
-                  </h3>
-
-                  <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed">
-                    {selectedCode.explanation.map((step, index) => (
-                      <li key={`${operation}-step-${index}`}>{step}</li>
-                    ))}
-                  </ol>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="min-w-0 border-border bg-card shadow-sm">
-              <CardHeader className="border-b border-border px-4 py-2.5">
-                <CardTitle className="text-base">Time Complexity</CardTitle>
-
-                <CardDescription className="text-xs">
-                  Selected operation and common linked-list operations.
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-3 p-3">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">
-                      {selectedCode.title}
-                    </p>
-
-                    <p className="text-2xl font-bold text-red-700 dark:text-red-400">
-                      {selectedCode.complexity}
-                    </p>
+                  <div className={`${innerBox} bg-muted/30 p-4`}>
+                    <p className="mb-2 text-xs font-medium">How it works</p>
+                    <ol className="list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                      {selectedCode.explanation.map((step, index) => (
+                        <li key={`${operation}-step-${index}`}>{step}</li>
+                      ))}
+                    </ol>
                   </div>
+                </CardContent>
+              </Card>
 
-                  <p className="max-w-[55%] text-right text-xs text-muted-foreground">
-                    {selectedCode.complexity === "O(1)"
-                      ? "Constant time: no traversal needed."
-                      : "Linear time: may visit every node."}
-                  </p>
-                </div>
+              {/* TIME COMPLEXITY */}
+              <Card
+                className={`${cardCls} flex min-w-0 flex-col overflow-hidden md:max-h-[560px]`}
+              >
+                <CardHeader className="p-4 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Time Complexity
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Performance of linked-list operations
+                  </CardDescription>
+                </CardHeader>
 
-                <div className="overflow-x-auto rounded-xl border border-border">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="bg-muted/60">
-                        <th className="border-b border-border p-2">
-                          Operation
-                        </th>
-                        <th className="border-b border-border p-2">Time</th>
-                        <th className="border-b border-border p-2">Why?</th>
-                      </tr>
-                    </thead>
+                <CardContent className="vis-scroll flex-1 overflow-y-scroll p-4 pt-1">
+                  <div className="space-y-3">
+                    {complexityRows.map((row) => {
+                      const isActive = row.key === operation;
 
-                    <tbody>
-                      {complexityRows.map((row) => (
-                        <tr
+                      return (
+                        <div
                           key={row.operation}
-                          className="transition-colors hover:bg-muted/40"
+                          className={`rounded-xl border p-4 transition-colors ${
+                            isActive
+                              ? "border-red-300 bg-red-50"
+                              : "border-[#BFD8D8] bg-card"
+                          }`}
                         >
-                          <td className="border-b border-border p-2 font-medium">
-                            {row.operation}
-                          </td>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-medium">
+                              {row.operation}
+                            </p>
 
-                          <td className="border-b border-border p-2">
                             <Badge
                               variant="outline"
-                              className={
-                                row.time === "O(1)"
-                                  ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
-                                  : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
-                              }
+                              className={`rounded-full font-mono text-[10px] ${
+                                isActive
+                                  ? "border-red-300 text-red-600"
+                                  : "border-[#BFD8D8]"
+                              }`}
                             >
                               {row.time}
                             </Badge>
-                          </td>
+                          </div>
 
-                          <td className="border-b border-border p-2 text-muted-foreground">
+                          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                             {row.why}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          </p>
+                        </div>
+                      );
+                    })}
 
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  Here, <strong>n</strong> is the number of nodes. In a singly
-                  linked list, inserting at the head takes O(1), while
-                  operations that need to find a node generally take O(n).
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+                    <div className={`${innerBox} bg-muted/30 p-4`}>
+                      <p className="text-xs font-medium">Space Complexity</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        A linked list storing n nodes requires O(n) space, with
+                        each node holding a value and a reference to the next
+                        node.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );
